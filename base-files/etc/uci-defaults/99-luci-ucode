@@ -1,0 +1,9 @@
+#!/bin/sh
+# LuCI 26.x (ucode) needs the uhttpd ucode prefix.
+# luci-base postinst is skipped during image builds (PKG_INSTROOT),
+# so configure it on first boot instead.
+[ -f /usr/share/ucode/luci/uhttpd.uc ] || exit 0
+uci -q get uhttpd.main.ucode_prefix 2>/dev/null | grep -q /cgi-bin/luci && exit 0
+uci add_list uhttpd.main.ucode_prefix='/cgi-bin/luci=/usr/share/ucode/luci/uhttpd.uc'
+uci commit uhttpd
+exit 0

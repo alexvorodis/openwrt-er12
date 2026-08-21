@@ -1,8 +1,9 @@
 # OpenWrt for Ubiquiti EdgeRouter 12 (ER-12)
 
 Custom OpenWrt firmware for the Ubiquiti EdgeRouter 12 — Cavium/Marvell
-CN7130 (Octeon+, mips64). All 12 physical ports work: 8× GbE RJ45 LAN,
-2× GbE RJ45 on the WAN side, 2× SFP+.
+CN7130 (Octeon+, mips64). Based on the
+[dmascord/openwrt](https://github.com/dmascord/openwrt) fork (PR #22153).
+This fork was developed with AI assistance (opencode/claude).
 
 - Base: OpenWrt master (`r34604`), target `octeon/generic`
 - Kernel: 6.18.31, toolchain mips64 octeonplus
@@ -142,20 +143,46 @@ removed.
 
 ## Building
 
-The build tree is a fork of `openwrt/openwrt` (master) with the `octeon`
-target changes committed on top. Standard OpenWrt flow:
+Clone this repo and run `build.sh` — it handles everything (OpenWrt clone,
+patches, config, feeds, compilation):
 
 ```bash
-./scripts/feeds update -a && ./scripts/feeds install -a
-make menuconfig     # target: octeon/generic, + LuCI, your packages
-make -j$(nproc) world
-# → bin/targets/octeon/generic/openwrt-octeon-generic-ubnt_edgerouter-12-*
+git clone https://github.com/alexvorodis/openwrt-er12.git
+cd openwrt-er12
+./build.sh
 ```
 
-Requirements: Ubuntu/Debian (or Docker), ~30 GB disk, 2–4 h build time.
-Dependencies: `build-essential git python3 rsync wget libncurses-dev flex
-bison gawk unzip file subversion quilt gettext zlib1g-dev libssl-dev
-xsltproc libxml-parser-perl`.
+Output: `openwrt/bin/targets/octeon/generic/openwrt-octeon-generic-ubnt_edgerouter-12-*`
+
+### Requirements
+
+- **OS:** Ubuntu/Debian (or Docker)
+- **Disk:** ~30 GB
+- **Time:** ~2–4 hours (first build)
+- **Packages:** `build-essential git python3 rsync wget libncurses-dev flex
+  bison gawk unzip file subversion quilt gettext zlib1g-dev libssl-dev
+  xsltproc libxml-parser-perl`
+
+### What build.sh does
+
+1. Clones [dmascord/openwrt](https://github.com/dmascord/openwrt) (branch
+   `openwrt/add-ubiquiti-er-12`, commit `2cd1a10829`)
+2. Applies the ER-12 kernel patches (703–716 + 900 device definition)
+3. Copies the DTS, base-files overlay, and `.config`
+4. Runs `feeds update`, `feeds install`, `make world`
+
+### Repository layout
+
+```
+openwrt-er12/
+├── build.sh              ← automated build script
+├── config/.config        ← full defconfig (octeon/generic + LuCI)
+├── patches/6.18/         ← kernel patches (703-716, 900 device)
+├── dts/                  ← device tree source
+├── base-files/           ← userspace overlay (er12-fabric, board.d, etc.)
+├── README.md             ← this file (hardware, patches, status)
+└── INSTALL.md            ← flashing and first-boot guide
+```
 
 ## Status
 
@@ -184,11 +211,13 @@ xsltproc libxml-parser-perl`.
   `switch0`/`br-lan`).
 - Port/SFP LEDs and the reset button are not wired into the kernel yet.
 
-## References
+## Acknowledgments
 
-- [openwrt/openwrt PR #22153](https://github.com/openwrt/openwrt/pull/22153) — initial ER-12 support (base for this work)
-- [OpenWrt forum: Support possible for the new Ubiquiti EdgeRouter 12?](https://forum.openwrt.org/t/support-possible-for-the-new-ubiquiti-edgerouter-12/32982)
-- [OpenWrt Octeon target](https://openwrt.org/docs/techref/targets/octeon)
+- [Damien Mascord](https://github.com/dmascord) — upstream OpenWrt fork with
+  initial ER-12 support ([PR #22153](https://github.com/openwrt/openwrt/pull/22153))
+- This fork was developed with **AI assistance** (opencode/claude) — port
+  mapping, fabric analysis, driver debugging, documentation
+- [OpenWrt](https://openwrt.org) project and community
 
 ## License
 

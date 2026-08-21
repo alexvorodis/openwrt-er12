@@ -34,14 +34,7 @@ sudo minicom -D /dev/ttyUSB0 -b 115200
 
 ### Step 1 — prepare the USB stick
 
-Either use the helper script from this repo (it asks for the device, formats
-FAT32 and copies the images — **wipes the stick**):
-
-```bash
-./prepare-usb.sh /path/to/images
-```
-
-or do it by hand:
+Format the USB stick as FAT32 and copy both images (**wipes all data**):
 
 ```bash
 sudo umount /dev/sdX*
