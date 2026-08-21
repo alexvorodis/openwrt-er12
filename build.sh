@@ -68,6 +68,13 @@ if [ ! -f "$BASE_MARKER" ] || [ "$(cat "$BASE_MARKER")" != "$BASE_COMMIT" ]; the
     echo "$BASE_COMMIT" > "$BASE_MARKER"
 fi
 
+# Apply our fixups on top of the base commit.
+# dmascord's ER-12 commit ships patch 711 empty while 709/710/714 call
+# its accessors - overwrite it with a working implementation.
+echo "Copying extra kernel patches..."
+mkdir -p target/linux/octeon/patches-6.18
+cp "$SCRIPT_DIR"/patches/6.18/711-*.patch target/linux/octeon/patches-6.18/
+
 # Feeds
 echo "Updating and installing feeds..."
 ./scripts/feeds update -a

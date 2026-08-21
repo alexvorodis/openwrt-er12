@@ -1,0 +1,82 @@
+From: OpenWrt ER-12 port
+Subject: octeon: ER-12 VLAN-aware fabric controls
+
+dmascord's ER-12 commit ships this patch empty while 709/710/714 call
+the accessors. Provide the missing module parameters so userspace
+(er12-fabric) can toggle switch0 tag rewrite at runtime:
+
+  /sys/module/octeon_ethernet/parameters/er12_vlan_aware
+  /sys/module/octeon_ethernet/parameters/er12_vlan_base_vid
+  /sys/module/octeon_ethernet/parameters/er12_vlan_switch0_vid
+
+Signed-off-by: alexvorodis <alexvorodis@users.noreply.github.com>
+---
+ drivers/staging/octeon/ethernet.c       | 34 +++++++++++++++++++++++++
+ drivers/staging/octeon/octeon-ethernet.h |  4 +++
+ 2 files changed, 38 insertions(+)
+
+--- a/drivers/staging/octeon/ethernet.c
++++ b/drivers/staging/octeon/ethernet.c
+@@ -85,7 +85,44 @@ int rx_napi_weight = 32;
+ int rx_napi_weight = 32;
+ module_param(rx_napi_weight, int, 0444);
+ MODULE_PARM_DESC(rx_napi_weight, "The NAPI WEIGHT parameter.");
+ 
++/*
++ * ER-12 VLAN-aware fabric controls.
++ *
++ * Userspace (er12-fabric init script) toggles switch0 tag rewrite at
++ * runtime through these module parameters:
++ *   er12_vlan_aware       - enable VLAN-aware fabric mode on interface 1
++ *   er12_vlan_base_vid    - lowest user VID handled by the fabric
++ *   er12_vlan_switch0_vid - VID representing the switch0 bridge itself
++ */
++int er12_vlan_aware;
++module_param(er12_vlan_aware, int, 0644);
++MODULE_PARM_DESC(er12_vlan_aware,
++		 "Enable ER-12 VLAN-aware switch0 fabric mode");
++
++int er12_vlan_base_vid = 4086;
++module_param(er12_vlan_base_vid, int, 0644);
++MODULE_PARM_DESC(er12_vlan_base_vid, "ER-12 fabric base user VID");
++
++int er12_vlan_switch0_vid = 4094;
++module_param(er12_vlan_switch0_vid, int, 0644);
++MODULE_PARM_DESC(er12_vlan_switch0_vid, "ER-12 fabric switch0 bridge VID");
++
++int cvm_oct_get_vlan_aware_state(void)
++{
++	return er12_vlan_aware;
++}
++
++u16 cvm_oct_get_vlan_base_vid(void)
++{
++	return (u16)er12_vlan_base_vid;
++}
++
++u16 cvm_oct_get_vlan_switch0_vid(void)
++{
++	return (u16)er12_vlan_switch0_vid;
++}
++
+ /* Mask indicating which receive groups are in use. */
+ int pow_receive_groups;
+ 
+--- a/drivers/staging/octeon/octeon-ethernet.h
++++ b/drivers/staging/octeon/octeon-ethernet.h
+@@ -100,8 +100,12 @@ extern char pow_send_list[];
+ extern char pow_send_list[];
+ extern struct net_device *cvm_oct_device[];
+ extern atomic_t cvm_oct_poll_queue_stopping;
+ extern u64 cvm_oct_tx_poll_interval;
+ 
+ extern int rx_napi_weight;
+ 
++int cvm_oct_get_vlan_aware_state(void);
++u16 cvm_oct_get_vlan_base_vid(void);
++u16 cvm_oct_get_vlan_switch0_vid(void);
++
+ #endif
+-- 
+2.43.0
+
