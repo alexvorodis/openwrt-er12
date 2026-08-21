@@ -12,6 +12,10 @@
 # Output: openwrt/bin/targets/octeon/generic/openwrt-octeon-generic-ubnt_edgerouter-12-*
 set -euo pipefail
 
+LOGFILE="build-$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee "$LOGFILE") 2>&1
+echo "Log: $PWD/$LOGFILE"
+
 REPO_URL="https://github.com/dmascord/openwrt.git"
 REPO_BRANCH="openwrt/add-ubiquiti-er-12"
 BASE_COMMIT="2cd1a10829"  # merge-base with upstream OpenWrt master (before ER-12 commits)
@@ -54,6 +58,17 @@ fi
 echo "Copying ER-12 patches..."
 mkdir -p target/linux/octeon/patches-6.18
 cp "$SCRIPT_DIR"/patches/6.18/*.patch target/linux/octeon/patches-6.18/
+
+# Copy host tool patches (e.g. m4 SIGSTKSZ fix for glibc 2.34+)
+if [ -d "$SCRIPT_DIR/patches/tools" ]; then
+    for tool_dir in "$SCRIPT_DIR"/patches/tools/*/; do
+        tool_name="$(basename "$tool_dir")"
+        if [ -d "tools/$tool_name/patches" ]; then
+            echo "Copying patches for tools/$tool_name..."
+            cp "$tool_dir"*.patch "tools/$tool_name/patches/" 2>/dev/null || true
+        fi
+    done
+fi
 
 # Copy DTS
 echo "Copying device tree..."
