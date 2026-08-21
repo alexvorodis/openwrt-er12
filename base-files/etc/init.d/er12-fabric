@@ -284,6 +284,15 @@ start() {
 	done
 	ensure_vlan_dev switch0 "$SWITCH0_VID" || true
 
+	# Bring up if2 ports (VSC8514, panels 1,2,4,5) and add to br-lan
+	for dev in lan0 lan1 lan2 lan3; do
+		has_dev "$dev" || continue
+		disable_ipv6_dev "$dev"
+		disable_multicast_dev "$dev"
+		ip link set dev "$dev" up >/dev/null 2>&1 || true
+		ip link set dev "$dev" master br-lan 2>/dev/null || true
+	done
+
 	lock_fabric_ipv6
 	set_ipv6_default_policy 0
 	lock_fabric_ipv6
