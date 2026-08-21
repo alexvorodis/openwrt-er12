@@ -83,6 +83,7 @@ echo "Updating and installing feeds..."
 # Copy build config (after feeds — .config references package symbols)
 echo "Copying .config..."
 cp "$SCRIPT_DIR"/config/.config .
+make defconfig
 
 # Pre-create python symlinks in staging_dir/host/bin so OpenWrt's
 # prerequisite check finds them even if ORIG_PATH differs from shell PATH.
