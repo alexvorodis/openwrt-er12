@@ -54,14 +54,14 @@ cp "$SCRIPT_DIR"/dts/cn7130_ubnt_edgerouter-12.dts \
 echo "Copying base-files overlay..."
 cp -a "$SCRIPT_DIR"/base-files/* target/linux/octeon/base-files/
 
-# Copy build config
-echo "Copying .config..."
-cp "$SCRIPT_DIR"/config/.config .
-
 # Feeds
 echo "Updating and installing feeds..."
 ./scripts/feeds update -a
 ./scripts/feeds install -a
+
+# Copy build config (after feeds — .config references package symbols)
+echo "Copying .config..."
+cp "$SCRIPT_DIR"/config/.config .
 
 # Build
 echo ""
