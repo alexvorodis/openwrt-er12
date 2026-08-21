@@ -41,13 +41,9 @@ else
     git checkout "$BASE_COMMIT"
 fi
 
-# Apply kernel patches (703-716 + 900 device definition)
-echo "Applying ER-12 patches..."
-for p in "$SCRIPT_DIR"/patches/6.18/*.patch; do
-    [ -f "$p" ] || continue
-    echo "  $(basename "$p")"
-    patch -p1 < "$p"
-done
+# Copy kernel patches (703-716 + 900 device definition) — OpenWrt applies them automatically
+echo "Copying ER-12 patches..."
+cp "$SCRIPT_DIR"/patches/6.18/*.patch target/linux/octeon/patches-6.18/
 
 # Copy DTS
 echo "Copying device tree..."
