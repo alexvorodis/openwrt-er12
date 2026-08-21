@@ -43,6 +43,7 @@ fi
 
 # Copy kernel patches (703-716 + 900 device definition) — OpenWrt applies them automatically
 echo "Copying ER-12 patches..."
+mkdir -p target/linux/octeon/patches-6.18
 cp "$SCRIPT_DIR"/patches/6.18/*.patch target/linux/octeon/patches-6.18/
 
 # Copy DTS
