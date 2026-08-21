@@ -72,10 +72,13 @@ How the mapping was established — full cable A/B test on the live board (panel
 > **Known issue:** if2 (VSC8514, panels 1/2/4/5, lan0–3) is **not functional**.
 > The VSC8514 managed switch needs MDIO initialization that the current kernel
 > does not provide. PHYs are visible on the bus (phy8–phy11, id `0x00070670`)
-> but no driver binds to them. **Result: only 4 of the 8 LAN ports work**
-> (panels 0, 3, 6, 7 via the if1 bond). The remaining 4 LAN ports (1, 2, 4, 5)
-> pass hardware-level L2 frames through the VSC8514 switch but are invisible to
-> the kernel — no link state, no counters, no VLAN tagging.
+> but no driver binds to them. Attempting to bring up if2 ports (`ip link set
+> lan0 up`) causes a kernel panic — the SGMII PCS is stuck. **Result: only 4 of
+> the 8 LAN ports work** (panels 0, 3, 6, 7 via the if1 bond). The remaining 4
+> LAN ports (1, 2, 4, 5) pass hardware-level L2 frames through the VSC8514
+> switch but are invisible to the kernel — no link state, no counters, no VLAN
+> tagging. Fix requires: (1) PCS recovery during probe (not on open), (2) VSC8514
+> PHY initialization via MDIO before PCS reset.
 
 > **Important:** panels 8/9 (`lan8`/`lan9`, if0) belong to a separate L2 domain —
 > the WAN side of the board. They are **not** part of the LAN fabric and are
