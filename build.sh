@@ -45,8 +45,11 @@ if [ -d "$BUILD_DIR/.git" ]; then
     echo "Updating existing clone..."
     cd "$BUILD_DIR"
     git fetch origin
-    git checkout "$REPO_BRANCH"
-    git reset --hard "$BASE_COMMIT"
+    # Force-checkout and drop leftovers from older overlay-style builds
+    # (previously copied patches/DTS/base-files now live in the tree itself)
+    git checkout -f "$REPO_BRANCH"
+    git reset -q --hard "$BASE_COMMIT"
+    git clean -qfd target tools toolchain package include scripts
 else
     echo "Cloning OpenWrt (dmascord fork, branch $REPO_BRANCH)..."
     git clone --branch "$REPO_BRANCH" "$REPO_URL" "$BUILD_DIR"
