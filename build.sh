@@ -18,7 +18,7 @@ echo "Log: $PWD/$LOGFILE"
 
 REPO_URL="https://github.com/dmascord/openwrt.git"
 REPO_BRANCH="openwrt/add-ubiquiti-er-12"
-BASE_COMMIT="2cd1a10829"  # merge-base with upstream OpenWrt master (before ER-12 commits)
+BASE_COMMIT="fd43f49717"  # ER-12 support on top of OpenWrt master 2026-05-26 (kernel 6.18)
 BUILD_DIR="openwrt"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -54,30 +54,16 @@ else
     git checkout "$BASE_COMMIT"
 fi
 
-# Copy kernel patches (703-716 + 900 device definition) — OpenWrt applies them automatically
-echo "Copying ER-12 patches..."
-mkdir -p target/linux/octeon/patches-6.18
-cp "$SCRIPT_DIR"/patches/6.18/*.patch target/linux/octeon/patches-6.18/
-
-# Copy host tool patches (e.g. m4 SIGSTKSZ fix for glibc 2.34+)
-if [ -d "$SCRIPT_DIR/patches/tools" ]; then
-    for tool_dir in "$SCRIPT_DIR"/patches/tools/*/; do
-        tool_name="$(basename "$tool_dir")"
-        if [ -d "tools/$tool_name/patches" ]; then
-            echo "Copying patches for tools/$tool_name..."
-            cp "$tool_dir"*.patch "tools/$tool_name/patches/" 2>/dev/null || true
-        fi
-    done
+# Wipe build artifacts when the base commit changes — stale toolchain/kernel
+# objects from a different base corrupt the build.
+BASE_MARKER=".openwrt-base"
+if [ ! -f "$BASE_MARKER" ] || [ "$(cat "$BASE_MARKER")" != "$BASE_COMMIT" ]; then
+    if [ -d build_dir ] || [ -d staging_dir ]; then
+        echo "Base commit changed -> cleaning build artifacts..."
+        rm -rf build_dir staging_dir tmp .ccache logs
+    fi
+    echo "$BASE_COMMIT" > "$BASE_MARKER"
 fi
-
-# Copy DTS
-echo "Copying device tree..."
-cp "$SCRIPT_DIR"/dts/cn7130_ubnt_edgerouter-12.dts \
-   target/linux/octeon/files/arch/mips/boot/dts/cavium-octeon/
-
-# Copy base-files overlay (er12-fabric, uci-defaults, board.d, upgrade hooks)
-echo "Copying base-files overlay..."
-cp -a "$SCRIPT_DIR"/base-files/* target/linux/octeon/base-files/
 
 # Feeds
 echo "Updating and installing feeds..."
