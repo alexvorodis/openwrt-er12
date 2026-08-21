@@ -21,7 +21,7 @@
 +	int index = cvmx_helper_get_interface_index_num(priv->port);
 +
 +	return of_machine_is_compatible("ubnt,edgerouter-12") &&
-+		(interface == 1) && index < 4;
++		(interface == 1 || interface == 2) && index < 4;
 +}
 +
 +static bool cvm_oct_need_pcs_recovery(struct octeon_ethernet *priv)
