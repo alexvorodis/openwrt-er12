@@ -44,21 +44,37 @@ CN7130
 │   └── panels 0, 3, 6, 7 → lan4–lan7   (bond members, see fabric below)
 │
 └── if2 (4× SGMII) → VSC8514
-    └── panels 1, 2, 4, 5 → lan0–lan3   (LAN access ports)
+    └── panels 1, 2, 4, 5 → lan0–lan3   (NOT WORKING — see below)
 ```
 
-How the mapping was established (cable A/B tests on the real board):
+How the mapping was established — full cable A/B test on the live board (panels
+0–7 one by one, bond TX/RX counters checked each time):
 
-- panel 1 → `lan1`: unplugging the cable drops exactly `lan1`, plugging brings it up
-- panels 3, 6, 7 → if1 group: LED lights, traffic works, but the kernel shows no
-  individual link state (they are bond members — carrier is always 1)
-- panel 0 → if1 group: with a host on panel 0 the whole LAN works while all of
-  `lan0–lan3` stay admin-down in the kernel, so the cable must sit on one of the
-  four if1 (bond) MACs
-- panels 2, 4, 5 → the remaining three if2 ports (by elimination)
+- **panel 0 → lan4**: confirmed by TX counter (bond hash selected lan4 for
+  host→router traffic; all other slaves had zero TX). First port tested, most
+  reliable result.
+- **panels 1, 2, 4, 5 → if2 group (VSC8514)**: lan0–lan3 stayed admin-down
+  with zero TX/RX counters on every test. The VSC8514 PHYs (phy8–11, id
+  `0x00070670`) are present on the MDIO bus but no driver binds to them; the
+  SGMII link between CN7130 and VSC8514 never comes up. Host traffic still
+  reaches the router via the bond (VSC8514 forwards at L2 hardware level), but
+  the kernel if2 interfaces are dead.
+- **panels 3, 6, 7 → if1 group (bond)**: traffic works, host reachable. The
+  bond balance-xor hash always picks the same slave for a given MAC/IP pair, so
+  per-panel distinction inside the bond requires physical cable pull (not done
+  this round — mapping by elimination from if2 confirmed as non-functional).
+- **panel 0 → lan4** was the only test where the TX counter moved on a single
+  slave (first test, clean counters). Subsequent tests all showed lan4 because
+  the bond hash is deterministic — the VSC8514 switch learns the router MAC from
+  lan4 replies and funnels all host traffic there regardless of physical port.
 
-The exact order *inside* each 4-port group is unknown and functionally
-irrelevant (the if1 group is a bond, the if2 ports are symmetric access ports).
+> **Known issue:** if2 (VSC8514, panels 1/2/4/5, lan0–3) is **not functional**.
+> The VSC8514 managed switch needs MDIO initialization that the current kernel
+> does not provide. PHYs are visible on the bus (phy8–phy11, id `0x00070670`)
+> but no driver binds to them. **Result: only 4 of the 8 LAN ports work**
+> (panels 0, 3, 6, 7 via the if1 bond). The remaining 4 LAN ports (1, 2, 4, 5)
+> pass hardware-level L2 frames through the VSC8514 switch but are invisible to
+> the kernel — no link state, no counters, no VLAN tagging.
 
 > **Important:** panels 8/9 (`lan8`/`lan9`, if0) belong to a separate L2 domain —
 > the WAN side of the board. They are **not** part of the LAN fabric and are
@@ -67,8 +83,9 @@ irrelevant (the if1 group is a bond, the if2 ports are symmetric access ports).
 ## How the LAN fabric works
 
 The ER-12 has no DSA-capable switch; the 8 LAN RJ45 ports are split over two
-PHY groups (4× AR8033 on if1, 4× VSC8514 on if2). The firmware emulates the
-stock EdgeOS fabric so that all 8 ports form a single untagged broadcast domain:
+PHY groups (4× AR8033 on if1, 4× VSC8514 on if2). Only the if1 group is
+currently functional; the VSC8514 on if2 needs MDIO driver initialization that
+is not yet implemented. **4 of the 8 LAN ports work** (panels 0, 3, 6, 7).
 
 1. `etc/init.d/er12-fabric` (START=18) at boot:
    - creates a Linux bond `itf` (balance-xor, miimon) from `lan4 lan5 lan6 lan7`
@@ -85,10 +102,10 @@ stock EdgeOS fabric so that all 8 ports form a single untagged broadcast domain:
    untagged frames received on the bond are tagged with VID 4094, and frames
    destined for VID 4094 are untagged on egress (patches 709/710/714).
    This makes the 4 if1 ports behave as untagged access ports in the 4094
-   "switch" domain, exactly like the 4 if2 access ports, which are switched
-   into the same domain by the CN7130 hardware fabric.
-3. Result: **all eight RJ45 ports (panels 0–7) are untagged access ports of
-   `br-lan`**.
+   "switch" domain.
+3. Result: **4 LAN RJ45 ports (panels 0, 3, 6, 7) are untagged access ports of
+   `br-lan`** via the if1 bond. The other 4 LAN ports (panels 1, 2, 4, 5) are
+   non-functional until the VSC8514 driver is added.
 
 ## Kernel patches
 
@@ -144,8 +161,9 @@ xsltproc libxml-parser-perl`.
 
 | Feature | Status |
 |---------|--------|
-| LAN ports 0–7 (8× RJ45) | ✅ working, 0% loss (A/B tested port by port) |
-| WAN ports 8–9 (RJ45) | ✅ working (DHCP tested on port 8; port 9 = second WAN slot) |
+| LAN ports 0, 3, 6, 7 (if1, AR8033, bond) | ✅ working, verified by cable A/B test |
+| LAN ports 1, 2, 4, 5 (if2, VSC8514) | ❌ **not functional** — VSC8514 PHY driver missing; PHYs visible on MDIO bus (phy8–11, id 0x00070670) but no kernel driver binds; SGMII link never comes up |
+| WAN ports 8–9 (RJ45) | ✅ working (DHCP tested on both) |
 | SFP 10–11 | ⚠️ defined in DTS, untested (no transceivers available) |
 | LuCI (web UI) | ✅ working |
 | Serial console (115200) | ✅ working |
@@ -155,6 +173,10 @@ xsltproc libxml-parser-perl`.
 
 ## Known limitations
 
+- **Only 4 of 8 LAN ports work** (panels 0, 3, 6, 7). The VSC8514 managed
+  switch on if2 (panels 1, 2, 4, 5) needs a dedicated MDIO driver for
+  initialization — the PHYs are on the bus (phy8–11) but nothing binds to them.
+  This is the main open issue.
 - WAN is not preconfigured on purpose (different upstreams per deployment).
 - Ports 8/9 are on the WAN-side L2 domain; bridging them into `br-lan` causes
   ~20% random frame loss (the fabric does not mix the two domains).
