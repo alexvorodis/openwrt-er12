@@ -206,7 +206,7 @@ openwrt-er12/
 
 - [Damien Mascord](https://github.com/dmascord) — upstream OpenWrt fork with
   initial ER-12 support ([PR #22153](https://github.com/openwrt/openwrt/pull/22153))
-- This fork was developed with **AI assistance** (opencode/claude) — port
+- This fork was developed with **AI assistance** (opencode) — port
   mapping, fabric analysis, driver debugging, documentation
 - [OpenWrt](https://openwrt.org) project and community
 

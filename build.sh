@@ -27,6 +27,15 @@ for cmd in git make gcc python3; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "Error: $cmd not found. Install build dependencies first."; exit 1; }
 done
 
+# Ensure python3 is findable by OpenWrt's prerequisite check (SetupHostCommand).
+# OpenWrt runs checks with PATH="$(ORIG_PATH)" which may differ from the
+# interactive shell PATH. Pre-create symlinks in staging_dir/host/bin so
+# the check passes immediately.
+PYTHON_BIN="$(command -v python3)"
+PYTHON_DIR="$(dirname "$PYTHON_BIN")"
+echo "Python: $PYTHON_BIN"
+export PATH="$PYTHON_DIR:$PATH"
+
 # Clone or update
 if [ -d "$BUILD_DIR/.git" ]; then
     echo "Updating existing clone..."
@@ -63,6 +72,13 @@ echo "Updating and installing feeds..."
 # Copy build config (after feeds — .config references package symbols)
 echo "Copying .config..."
 cp "$SCRIPT_DIR"/config/.config .
+
+# Pre-create python symlinks in staging_dir/host/bin so OpenWrt's
+# prerequisite check finds them even if ORIG_PATH differs from shell PATH.
+echo "Pre-creating python symlinks..."
+mkdir -p staging_dir/host/bin
+ln -sf "$PYTHON_BIN" staging_dir/host/bin/python 2>/dev/null || true
+ln -sf "$PYTHON_BIN" staging_dir/host/bin/python3 2>/dev/null || true
 
 # Build
 echo ""
