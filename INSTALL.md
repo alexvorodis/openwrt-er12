@@ -124,7 +124,7 @@ If OpenWrt is already running, just sysupgrade:
 
 ## First boot / configuration
 
-1. Connect a PC to a working LAN port (**panel 0, 3, 6, or 7**), IP 192.168.1.2/24.
+1. Connect a PC to any LAN port (**panel 0–7**), IP 192.168.1.2/24.
 2. Open `http://192.168.1.1` (LuCI) or `ssh root@192.168.1.1`.
    Default credentials: **root / (empty password)** — LuCI will ask you to set
    a password.
@@ -154,8 +154,7 @@ If OpenWrt is already running, just sysupgrade:
 ### Port quick reference
 
 ```
-panels 0,3,6,7 → LAN  (br-lan, 192.168.1.1/24, untagged, bond itf)
-panels 1,2,4,5 → LAN  (NOT WORKING — VSC8514 driver missing)
+panels 0-7     → LAN  (br-lan, 192.168.1.1/24, untagged)
 panels 8-9     → WAN  (configure as WAN interfaces)
 panels 10-11   → SFP+ (configure as needed)
 ```

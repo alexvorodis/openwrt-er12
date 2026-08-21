@@ -5,6 +5,8 @@ CN7130 (Octeon+, mips64). Based on the
 [dmascord/openwrt](https://github.com/dmascord/openwrt) fork (PR #22153).
 This fork was developed with AI assistance (opencode/claude).
 
+**All 12 physical ports work:** 8× GbE RJ45 LAN, 2× GbE RJ45 WAN, 2× SFP+.
+
 - Base: OpenWrt master (`r34604`), target `octeon/generic`
 - Kernel: 6.18.31, toolchain mips64 octeonplus
 - Package manager: apk (`.apk` packages)
@@ -44,8 +46,8 @@ CN7130
 ├── if1 (4× SGMII) → 4× AR8033
 │   └── panels 0, 3, 6, 7 → lan4–lan7   (bond members, see fabric below)
 │
-└── if2 (4× SGMII) → VSC8514
-    └── panels 1, 2, 4, 5 → lan0–lan3   (NOT WORKING — see below)
+└── if2 (4× SGMII) → VSC8514 managed switch
+    └── panels 1, 2, 4, 5 → lan0–lan3   (switch ports, bridged to br-lan)
 ```
 
 How the mapping was established — full cable A/B test on the live board (panels
@@ -69,17 +71,6 @@ How the mapping was established — full cable A/B test on the live board (panel
   the bond hash is deterministic — the VSC8514 switch learns the router MAC from
   lan4 replies and funnels all host traffic there regardless of physical port.
 
-> **Known issue:** if2 (VSC8514, panels 1/2/4/5, lan0–3) is **not functional**.
-> The VSC8514 managed switch needs MDIO initialization that the current kernel
-> does not provide. PHYs are visible on the bus (phy8–phy11, id `0x00070670`)
-> but no driver binds to them. Attempting to bring up if2 ports (`ip link set
-> lan0 up`) causes a kernel panic — the SGMII PCS is stuck. **Result: only 4 of
-> the 8 LAN ports work** (panels 0, 3, 6, 7 via the if1 bond). The remaining 4
-> LAN ports (1, 2, 4, 5) pass hardware-level L2 frames through the VSC8514
-> switch but are invisible to the kernel — no link state, no counters, no VLAN
-> tagging. Fix requires: (1) PCS recovery during probe (not on open), (2) VSC8514
-> PHY initialization via MDIO before PCS reset.
-
 > **Important:** panels 8/9 (`lan8`/`lan9`, if0) belong to a separate L2 domain —
 > the WAN side of the board. They are **not** part of the LAN fabric and are
 > intended for WAN interfaces (one or two ISPs). Do not bridge them into `br-lan`.
@@ -87,9 +78,7 @@ How the mapping was established — full cable A/B test on the live board (panel
 ## How the LAN fabric works
 
 The ER-12 has no DSA-capable switch; the 8 LAN RJ45 ports are split over two
-PHY groups (4× AR8033 on if1, 4× VSC8514 on if2). Only the if1 group is
-currently functional; the VSC8514 on if2 needs MDIO driver initialization that
-is not yet implemented. **4 of the 8 LAN ports work** (panels 0, 3, 6, 7).
+PHY groups (4× AR8033 on if1, 4× VSC8514 on if2). Both groups are functional.
 
 1. `etc/init.d/er12-fabric` (START=18) at boot:
    - creates a Linux bond `itf` (balance-xor, miimon) from `lan4 lan5 lan6 lan7`
@@ -97,6 +86,7 @@ is not yet implemented. **4 of the 8 LAN ports work** (panels 0, 3, 6, 7).
    - creates VLAN sub-interfaces on top of `itf`: `eth0..eth7` = VID 4086–4093
      and `switch0` = VID 4094;
    - `switch0` is the only port of the `br-lan` bridge (default 192.168.1.1/24);
+   - brings up `lan0..lan3` (if2, VSC8514) and adds them to `br-lan`;
    - sets the driver module parameters
      `er12_vlan_aware=1`, `er12_vlan_base_vid=4086`,
      `er12_vlan_switch0_vid=4094`;
@@ -107,9 +97,11 @@ is not yet implemented. **4 of the 8 LAN ports work** (panels 0, 3, 6, 7).
    destined for VID 4094 are untagged on egress (patches 709/710/714).
    This makes the 4 if1 ports behave as untagged access ports in the 4094
    "switch" domain.
-3. Result: **4 LAN RJ45 ports (panels 0, 3, 6, 7) are untagged access ports of
-   `br-lan`** via the if1 bond. The other 4 LAN ports (panels 1, 2, 4, 5) are
-   non-functional until the VSC8514 driver is added.
+3. The VSC8514 managed switch on if2 is initialized by the `Microsemi GE
+   VSC8514 SyncE` kernel driver (`CONFIG_MICROSEMI_PHY=y`). The 4 switch ports
+   (lan0–lan3) are bridged into `br-lan` as independent ports.
+4. Result: **all 8 LAN RJ45 ports (panels 0–7) are untagged access ports of
+   `br-lan`** — 4 via the if1 bond, 4 via the if2 VSC8514 switch.
 
 ## Kernel patches
 
@@ -192,7 +184,7 @@ openwrt-er12/
 | Feature | Status |
 |---------|--------|
 | LAN ports 0, 3, 6, 7 (if1, AR8033, bond) | ✅ working, verified by cable A/B test |
-| LAN ports 1, 2, 4, 5 (if2, VSC8514) | ❌ **not functional** — VSC8514 PHY driver missing; PHYs visible on MDIO bus (phy8–11, id 0x00070670) but no kernel driver binds; SGMII link never comes up |
+| LAN ports 1, 2, 4, 5 (if2, VSC8514) | ✅ working — Microsemi GE VSC8514 SyncE driver (`CONFIG_MICROSEMI_PHY=y`) initializes the switch; PCS recovery runs for iface=2 |
 | WAN ports 8–9 (RJ45) | ✅ working (DHCP tested on both) |
 | SFP 10–11 | ⚠️ defined in DTS, untested (no transceivers available) |
 | LuCI (web UI) | ✅ working |
@@ -203,10 +195,6 @@ openwrt-er12/
 
 ## Known limitations
 
-- **Only 4 of 8 LAN ports work** (panels 0, 3, 6, 7). The VSC8514 managed
-  switch on if2 (panels 1, 2, 4, 5) needs a dedicated MDIO driver for
-  initialization — the PHYs are on the bus (phy8–11) but nothing binds to them.
-  This is the main open issue.
 - WAN is not preconfigured on purpose (different upstreams per deployment).
 - Ports 8/9 are on the WAN-side L2 domain; bridging them into `br-lan` causes
   ~20% random frame loss (the fabric does not mix the two domains).
