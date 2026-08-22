@@ -228,7 +228,7 @@ openwrt-er12/
 | LuCI (web UI) | ✅ working |
 | Serial console (115200) | ✅ working |
 | USB 3.0 | ✅ working |
-| LEDs | ⚠️ power only, port LEDs not driven |
+| LEDs | ✅ working — port LEDs light up on cable connect (hardware-driven via PHY status lines; the kernel LED class registers only `blue:power`/`white:power`) |
 | Reset button | ⚠️ untested |
 
 ## Known limitations
@@ -242,7 +242,9 @@ openwrt-er12/
   (1/2/4/5) lose their path to the kernel.
 - IPv6 is disabled on the fabric interfaces by the fabric script (kept on
   `switch0`/`br-lan`).
-- Port/SFP LEDs and the reset button are not wired into the kernel yet.
+- RJ45 port LEDs work in hardware (PHY status lines), no kernel driver involved;
+  SFP module presence/activity and the reset button are not wired into the
+  kernel yet.
 
 ## Acknowledgments
 
