@@ -75,6 +75,13 @@ echo "Copying extra kernel patches..."
 mkdir -p target/linux/octeon/patches-6.18
 cp "$SCRIPT_DIR"/patches/6.18/711-*.patch target/linux/octeon/patches-6.18/
 
+# Restore exec bits lost in dmascord's published commit (his working tree had
+# them set; git index says 644 -> init script fails with Permission denied,
+# fabric never comes up and br-lan stays down).
+echo "Fixing exec bits on ER-12 base-files scripts..."
+chmod +x target/linux/octeon/base-files/etc/init.d/er12-fabric \
+         target/linux/octeon/base-files/usr/sbin/er12-netmode
+
 # Feeds
 echo "Updating and installing feeds..."
 ./scripts/feeds update -a
