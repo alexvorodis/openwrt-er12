@@ -33,22 +33,42 @@ openwrt-octeon-generic-ubnt_edgerouter-12-squashfs-sysupgrade.tar (~19 MB)
 ## Port layout
 
 The panel labels and the kernel interface names are **not** the same, and the
-ports are distributed over three SoC Ethernet interfaces with different PHYs:
+ports are distributed over three SoC Ethernet interfaces with different PHYs.
+
+The 8 LAN RJ45 ports are **not** wired straight to the SoC. A board photo +
+vendor U-Boot dump (OpenWrt forum thread "Support possible for the new Ubiquiti
+EdgeRouter 12?", lemmi) shows a **QCA8511 switch chip** in between: both LAN PHY
+groups hang off it, and vendor U-Boot initializes it on every boot (`Net:
+QCA8511 Init done` — our kernel never touches it; the config survives the OS
+handoff). This is why if2-group panels work even when the kernel-side `if2`
+interfaces are down (see "How the LAN fabric works").
 
 ```
 CN7130
-├── if0 (10G SerDes) → VSC8504
+├── if0 (QSGMII) → VSC8504 quad PHY (MDIO 4–7, id 0x000704c2)
 │   ├── panel 8  → lan8    RJ45, WAN side
 │   ├── panel 9  → lan9    RJ45, WAN side
 │   ├── panel 10 → lan10   SFP+
 │   └── panel 11 → lan11   SFP+
 │
-├── if1 (4× SGMII) → 4× AR8033
+├── if1 (QSGMII) → QCA8511 ── 4× SGMII → 4× AR8033 (MDIO 0–3)
+│   │                   └── 4× SGMII → VSC8514 quad PHY (MDIO 8–11, id 0x00070670)
 │   └── panels 0, 3, 6, 7 → lan4–lan7   (bond members, see fabric below)
+│       panels 1, 2, 4, 5 reach the kernel through QCA8511's internal L2
+│       forwarding onto the if1 uplink — not via their own SoC interface.
 │
-└── if2 (4× SGMII) → VSC8514 managed switch
-    └── panels 1, 2, 4, 5 → lan0–lan3   (switch ports, bridged to br-lan)
+└── if2 (QSGMII) → VSC8514 quad PHY (MDIO 8–11)
+    └── panels 1, 2, 4, 5 → lan0–lan3   (kernel-side path; parallel to the
+                                         QCA8511-internal one, usually idle)
 ```
+
+Live MDIO bus map on this board (`/sys/bus/mdio_bus/devices/8001180000001800`):
+
+| MDIO addr | PHY id | What it is | Kernel driver bound |
+|-----------|--------|------------|---------------------|
+| 0–3 | `0x004dd074` (Atheros) | AR8033, if1 group | qualcomm Atheros AR8033 ✓ |
+| 4–7 | `0x000704c2` | VSC8504 quad PHY, if0 group (per U-Boot mdio list) | none (6/7: Generic PHY) |
+| 8–11 | `0x00070670` | "VSC8514" port PHYs, if2 group | none — the DTS `compatible = "vitesse,vsc8514"` blocks even the generic fallback; the chip answers with a Broadcom OUI (0x0007), so its real identity is unconfirmed |
 
 How the mapping was established — full cable A/B test on the live board (panels
 0–7 one by one, bond TX/RX counters checked each time):
@@ -58,18 +78,22 @@ How the mapping was established — full cable A/B test on the live board (panel
   reliable result.
 - **panels 1, 2, 4, 5 → if2 group (VSC8514)**: lan0–lan3 stayed admin-down
   with zero TX/RX counters on every test. The VSC8514 PHYs (phy8–11, id
-  `0x00070670`) are present on the MDIO bus but no driver binds to them; the
-  SGMII link between CN7130 and VSC8514 never comes up. Host traffic still
-  reaches the router via the bond (VSC8514 forwards at L2 hardware level), but
-  the kernel if2 interfaces are dead.
+  `0x00070670`) are present on the MDIO bus but no driver binds to them. Host
+  traffic still reaches the router via the bond — the forwarding happens inside
+  the QCA8511 switch chip (see above), not in the kernel. Re-verified live:
+  with a host cabled into panel 1 and lan0–lan3 completely down/unbridged, ping
+  loss was 0 %; bringing lan0–lan3 up (PCS recovery fires on iface=2, carrier
+  forced to 1) still shows rx=tx≈0 — the kernel-side if2 is a parallel path that
+  normally carries no unicast traffic.
 - **panels 3, 6, 7 → if1 group (bond)**: traffic works, host reachable. The
   bond balance-xor hash always picks the same slave for a given MAC/IP pair, so
   per-panel distinction inside the bond requires physical cable pull (not done
   this round — mapping by elimination from if2 confirmed as non-functional).
 - **panel 0 → lan4** was the only test where the TX counter moved on a single
   slave (first test, clean counters). Subsequent tests all showed lan4 because
-  the bond hash is deterministic — the VSC8514 switch learns the router MAC from
-  lan4 replies and funnels all host traffic there regardless of physical port.
+  the bond hash is deterministic — the QCA8511 chip learns the router MAC from
+  the if1 uplink and funnels host traffic onto that bond regardless of physical
+  panel.
 
 > **Important:** panels 8/9 (`lan8`/`lan9`, if0) belong to a separate L2 domain —
 > the WAN side of the board. They are **not** part of the LAN fabric and are
@@ -77,8 +101,11 @@ How the mapping was established — full cable A/B test on the live board (panel
 
 ## How the LAN fabric works
 
-The ER-12 has no DSA-capable switch; the 8 LAN RJ45 ports are split over two
-PHY groups (4× AR8033 on if1, 4× VSC8514 on if2). Both groups are functional.
+The ER-12 has no DSA-capable switch in the kernel's view; the 8 LAN RJ45 ports
+are split over two PHY groups (4× AR8033 behind if1, 4× VSC8514 behind if2),
+and both groups sit behind the QCA8511 board-level switch chip. All 8 panels
+are functional; only the AR8033/if1 group carries kernel-visible traffic (see
+point 4).
 
 1. `etc/init.d/er12-fabric` (START=18) at boot:
    - creates a Linux bond `itf` (balance-xor, miimon) from `lan4 lan5 lan6 lan7`
@@ -97,11 +124,22 @@ PHY groups (4× AR8033 on if1, 4× VSC8514 on if2). Both groups are functional.
    destined for VID 4094 are untagged on egress (patches 709/710/714).
    This makes the 4 if1 ports behave as untagged access ports in the 4094
    "switch" domain.
-3. The VSC8514 managed switch on if2 is initialized by the `Microsemi GE
-   VSC8514 SyncE` kernel driver (`CONFIG_MICROSEMI_PHY=y`). The 4 switch ports
-   (lan0–lan3) are bridged into `br-lan` as independent ports.
-4. Result: **all 8 LAN RJ45 ports (panels 0–7) are untagged access ports of
-   `br-lan`** — 4 via the if1 bond, 4 via the if2 VSC8514 switch.
+ 3. The if2-group panels (1/2/4/5) reach the kernel through QCA8511's internal
+    L2 forwarding onto the if1 uplink, so their frames enter via the bond and
+    are handled exactly like AR8033 traffic (tagged VID 4094 by point 2). The
+    chip itself is initialized only by vendor U-Boot; no kernel driver binds to
+    its MDIO ports (`CONFIG_MICROSEMI_PHY=y` is set but nothing matches id
+    `0x00070670`).
+ 4. The kernel-side if2 interfaces (lan0–lan3) are a parallel path: they come
+    up via PCS recovery (patch 706, carrier forced to 1 by
+    `cavium,force-link-up`) and are bridged into `br-lan` as independent ports,
+    but normally carry no unicast traffic — frames between the two panel groups
+    never cross the CN7130↔VSC8514 SGMII uplink. Broadcast tests showed no
+    loop-back through this path either. Leaving them in `br-lan` is harmless;
+    removing them changes nothing functionally.
+ 5. Result: **all 8 LAN RJ45 ports (panels 0–7) are untagged access ports of
+    `br-lan`** — physically all of them, via the QCA8511 chip onto the if1
+    bond; kernel-wise, traffic arrives only on `switch0`.
 
 ## Kernel patches
 
@@ -184,7 +222,7 @@ openwrt-er12/
 | Feature | Status |
 |---------|--------|
 | LAN ports 0, 3, 6, 7 (if1, AR8033, bond) | ✅ working, verified by cable A/B test |
-| LAN ports 1, 2, 4, 5 (if2, VSC8514) | ✅ working — Microsemi GE VSC8514 SyncE driver (`CONFIG_MICROSEMI_PHY=y`) initializes the switch; PCS recovery runs for iface=2 |
+| LAN ports 1, 2, 4, 5 (if2, VSC8514) | ✅ working — via QCA8511 internal L2 forwarding onto the if1 bond (verified live with kernel-side if2 down); PCS recovery runs for iface=2 when lan0–3 are brought up |
 | WAN ports 8–9 (RJ45) | ✅ working (DHCP tested on both) |
 | SFP 10–11 | ⚠️ defined in DTS, untested (no transceivers available) |
 | LuCI (web UI) | ✅ working |
@@ -198,6 +236,10 @@ openwrt-er12/
 - WAN is not preconfigured on purpose (different upstreams per deployment).
 - Ports 8/9 are on the WAN-side L2 domain; bridging them into `br-lan` causes
   ~20% random frame loss (the fabric does not mix the two domains).
+- The QCA8511 switch chip is configured only by **vendor U-Boot** (`QCA8511
+  Init done`). As long as we keep the vendor U-Boot on eMMC this is invisible;
+  a custom/rebuilt U-Boot would have to initialize it or the if2-group panels
+  (1/2/4/5) lose their path to the kernel.
 - IPv6 is disabled on the fabric interfaces by the fabric script (kept on
   `switch0`/`br-lan`).
 - Port/SFP LEDs and the reset button are not wired into the kernel yet.
