@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+# er12-linksync init — start/stop the per-port link sync daemon
+
+START=99
+STOP=10
+
+USE_PROCD=0
+
+PIDFILE=/var/run/er12-linksync.pid
+DAEMON=/usr/lib/er12/er12-linksync.sh
+
+start() {
+	[ -x "$DAEMON" ] || return 0
+	[ "$(uci -q get linksync.general.enabled)" = "0" ] && return 0
+	procd_open_instance 2>/dev/null || true
+	# plain start: daemon loops internally
+	start-stop-daemon -S -b -m -p "$PIDFILE" -x /bin/sh -- "$DAEMON"
+	logger -t er12-linksync "init: started"
+}
+
+stop() {
+	if [ -f "$PIDFILE" ]; then
+		PID=$(cat "$PIDFILE")
+		kill "$PID" 2>/dev/null
+		rm -f "$PIDFILE"
+	fi
+	pids=$(pgrep -f er12-linksync.sh)
+	for p in $pids; do kill "$p" 2>/dev/null; done
+	logger -t er12-linksync "init: stopped"
+}
+
+restart() {
+	stop
+	sleep 1
+	start
+}

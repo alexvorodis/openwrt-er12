@@ -80,6 +80,11 @@ echo "Copying DTS..."
 cp "$SCRIPT_DIR"/dts/cn7130_ubnt_edgerouter-12.dts \
    target/linux/octeon/files/arch/mips/boot/dts/cavium-octeon/cn7130_ubnt_edgerouter-12.dts
 
+# Copy mii-rd package (per-port linksync daemon for ER-12)
+echo "Copying mii-rd package..."
+mkdir -p package/mii-rd
+cp -r "$SCRIPT_DIR"/pkg/mii-rd/* package/mii-rd/
+
 # Restore exec bits lost in dmascord's published commit (his working tree had
 # them set; git index says 644 -> init script fails with Permission denied,
 # fabric never comes up and br-lan stays down).
