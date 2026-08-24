@@ -6,21 +6,12 @@
 #   link up   -> ip link set <dev> up
 #   link down -> ip link set <dev> down (unless KEEPUP)
 #
-# This reproduces what the stock EdgeOS userspace does: `ip a` shows a
-# port as UP only when a cable/module is actually present.
-#
 # Port -> MDIO address map verified live 2026-08-24 (PORT_PHY_MAP.md):
 #   lan0..lan3  = phy 08..0b (VSC8514, panels 4-7)
 #   lan8        = phy 06     (panel 8)
 #   lan9        = phy 07     (panel 9)
 #   lan10       = phy 04     (SFP+ #1, panel 10)
 #   lan11       = phy 05     (SFP+ #2, panel 11)
-#
-# Settings (UCI):
-#   linksync.enabled=1      enable daemon (default 1 on ER-12)
-#   linksync.poll_ms=1000   poll interval
-#   linksync.keepup=<list>  netdevs never forced down (default "lan9")
-#                           lan9 must stay up: it hosts the MDIO ioctl.
 
 PROG=/usr/sbin/mii_rd
 HOST_DEV=lan9
@@ -32,30 +23,26 @@ poll_ms() {
 	case "$v" in *[!0-9]*|"") echo 1000;; *) [ "$v" -lt 200 ] && echo 200 || echo "$v";; esac
 }
 
-load_config() {
-	local enabled
-	config_get enabled general enabled 1
-	[ "$enabled" = "1" ] || exit 0
-	# keepup is a UCI list; config_get joins list items with spaces
-	config_list_foreach general keepup append_keepup
-	KEEPUP="${KEEPUP:-lan9}"
-}
-
 append_keepup() {
 	KEEPUP="$KEEPUP $1"
 }
 
+load_config() {
+	local enabled
+	config_get enabled general enabled 1
+	[ "$enabled" = "1" ] || exit 0
+	KEEPUP=""
+	config_list_foreach general keepup append_keepup
+	KEEPUP="${KEEPUP:-lan9}"
+}
+
 link_bit() {
-	# link_bit <phy_addr> -> 0/1 ; reads via HOST_DEV's phydev ioctl
+	# link_bit <phy_addr> -> 0/1 ; BMSR bit2 via HOST_DEV's phydev ioctl
 	v="$($PROG "$HOST_DEV" "$1" 1 2>/dev/null)" || { echo 0; return; }
-	case "$v" in
-		*[048cC]) # low nibble has bit2 set
-			n=${v##*0x}
-			n=${n#${n%?}}
-			case "$n" in 4|5|6|7|c|C|d|D) echo 1;; *) echo 0;; esac
-			;;
-		*) echo 0 ;;
-	esac
+	n=${v##*[!0-9a-fA-F]}
+	[ -z "$n" ] && { echo 0; return; }
+	n=${n#${n%?}}
+	case "$n" in 4|5|6|7|c|C|d|D) echo 1;; *) echo 0;; esac
 }
 
 sync_once() {
@@ -63,7 +50,6 @@ sync_once() {
 	for pair in $MAP; do
 		dev=${pair%%:*}; phy=${pair##*:}
 		l=$(link_bit "$phy")
-		cur=$(cat "/sys/class/net/$dev/flags" 2>/dev/null) || cur=""
 		if [ "$l" = "1" ]; then
 			ip link set dev "$dev" up 2>/dev/null
 			state="$state ${dev}=up"
@@ -85,11 +71,10 @@ sync_once() {
 start_service() {
 	[ -x "$PROG" ] || exit 0
 	. /lib/functions.sh
-	config_load linksync 2>/dev/null || true
+	config_load linksync
 	load_config
 	INTERVAL=$(poll_ms)
 
-	echo "$$" > /var/run/er12-linksync.pid
 	logger -t er12-linksync "started (poll=${INTERVAL}ms keepup='$KEEPUP')"
 
 	while :; do
@@ -98,5 +83,4 @@ start_service() {
 	done
 }
 
-# executed directly (not sourced) -> run the daemon loop
 start_service
