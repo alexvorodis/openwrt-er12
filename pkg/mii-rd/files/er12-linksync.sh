@@ -19,9 +19,9 @@ HOST_DEV=lan9
 # Standalone netdevs (panel ports with own PHY)
 MAP="lan0:0x08 lan1:0x09 lan2:0x0a lan3:0x0b lan8:0x06 lan9:0x07 lan10:0x04 lan11:0x05"
 
-# QCA8511 internal PHYs behind the switch -> per-port VLAN devs eth0..eth7
-# (cosmetic carrier like stock EdgeOS; traffic itself rides switch0/vlan4094)
-SMAP="eth0:0x00 eth1:0x01 eth2:0x02 eth3:0x03 eth4:0x04 eth5:0x05 eth6:0x06 eth7:0x07"
+# QCA8511 internal PHYs behind the switch -> per-port VLAN devs eth0..eth3
+# (panels 0-3 only; panels 4-7 are VSC8514 = lan0-3, already covered by MAP)
+SMAP="eth0:0x00 eth1:0x01 eth2:0x02 eth3:0x03"
 
 poll_ms() {
 	config_get v general poll_ms 1000
