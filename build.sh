@@ -75,6 +75,11 @@ echo "Copying extra kernel patches..."
 mkdir -p target/linux/octeon/patches-6.18
 cp "$SCRIPT_DIR"/patches/6.18/711-*.patch target/linux/octeon/patches-6.18/
 
+# Copy our corrected DTS (MAC offsets fixed to match live vendor DT)
+echo "Copying DTS..."
+cp "$SCRIPT_DIR"/dts/cn7130_ubnt_edgerouter-12.dts \
+   target/linux/octeon/files/arch/mips/boot/dts/cavium-octeon/cn7130_ubnt_edgerouter-12.dts
+
 # Restore exec bits lost in dmascord's published commit (his working tree had
 # them set; git index says 644 -> init script fails with Permission denied,
 # fabric never comes up and br-lan stays down).
