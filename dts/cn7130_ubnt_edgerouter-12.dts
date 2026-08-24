@@ -1,4 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+// SPDX-License-Identifier: GPL-2.0-later OR MIT
+//
+// Ubiquiti EdgeRouter 12 (board 20300)
+// Based on live /proc/device-tree dump from recovery ER-e300 v2.0.6
+//
+// MAC scheme (base = eeprom offset 0):
+//   if0: SFP+ #1 (+0), SFP+ #2 (+1), WAN RJ45 panel8 (+2), WAN RJ45 panel9 (+3)
+//   if1: uplink to QCA8511 switch, force-link-up (+4..+7)
+//   if2: kernel-side parallel path for VSC8514 group (+8..+11)
+//
+// NOTE: e300.dtsi defines keys/reset on GPIO 11, but on ER-12 GPIO 11 is the
+// yellow LED (d1). The real reset button pin is unknown — UBNT reads it in
+// proprietary userspace (ubnt_platform.ko). See hardware/er12-recovery-2026-08-23/REPORT.md
 
 #include "cn7130_ubnt_edgerouter-e300.dtsi"
 
@@ -89,7 +101,7 @@
 			status = "okay";
 			phy-mode = "sgmii";
 			phy-handle = <&phy5>;
-			nvmem-cells = <&macaddr_eeprom_0 12>;
+			nvmem-cells = <&macaddr_eeprom_0 1>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -110,7 +122,7 @@
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 3>;
+			nvmem-cells = <&macaddr_eeprom_0 4>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -119,7 +131,7 @@
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 4>;
+			nvmem-cells = <&macaddr_eeprom_0 5>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -128,7 +140,7 @@
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 5>;
+			nvmem-cells = <&macaddr_eeprom_0 6>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -137,7 +149,7 @@
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 6>;
+			nvmem-cells = <&macaddr_eeprom_0 7>;
 			nvmem-cell-names = "mac-address";
 		};
 	};
@@ -156,7 +168,7 @@
 			reg = <0>;
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 7>;
+			nvmem-cells = <&macaddr_eeprom_0 8>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -167,7 +179,7 @@
 			reg = <1>;
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 8>;
+			nvmem-cells = <&macaddr_eeprom_0 9>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -178,7 +190,7 @@
 			reg = <2>;
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 9>;
+			nvmem-cells = <&macaddr_eeprom_0 10>;
 			nvmem-cell-names = "mac-address";
 		};
 
@@ -189,8 +201,8 @@
 			reg = <3>;
 			phy-mode = "sgmii";
 			cavium,force-link-up;
-			nvmem-cells = <&macaddr_eeprom_0 10>;
+			nvmem-cells = <&macaddr_eeprom_0 11>;
 			nvmem-cell-names = "mac-address";
-			};
 		};
+	};
 };
