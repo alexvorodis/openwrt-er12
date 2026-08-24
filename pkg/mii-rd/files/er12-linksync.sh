@@ -53,10 +53,38 @@ hexval() {
 }
 
 link_bit() {
-	# link_bit <phy_addr> -> 0/1 ; BMSR bit2 via HOST_DEV's phydev ioctl
-	v="$($PROG "$HOST_DEV" "$1" 1 2>/dev/null)" || { echo 0; return; }
-	n=$(hexval "$v")
-	case ${n#${n%?}} in 4|5|6|7|c|C|d|D) echo 1;; *) echo 0;; esac
+	# link_bit <phy_addr> -> 0/1 ; BMSR bit2, majority of 3 reads.
+	# First read discards the IEEE latched-low status, then vote 2-of-3
+	# so a marginal/flapping link does not bounce the admin state.
+	local p=$1 u=0 i n v
+	$PROG "$HOST_DEV" "$p" 1 >/dev/null 2>&1 || true
+	for i in 1 2 3; do
+		v=$($PROG "$HOST_DEV" "$p" 1 2>/dev/null) || continue
+		n=$(hexval "$v")
+		[ $(( 0x$n & 4 )) -ne 0 ] && u=$((u + 1))
+	done
+	[ $u -ge 2 ] && echo 1 || echo 0
+}
+
+assign_eth_macs() {
+	# Stock EdgeOS gives eth0..eth7 unique MACs: itf + 1 .. itf + 8.
+	# Reproduce that (itf itself is base+4).
+	local b o1 o2 o3 o4 o5 o6 v i m
+	b=$(cat /sys/class/net/itf/address 2>/dev/null) || return 0
+	o1=${b%%:*}; b=${b#*:}
+	o2=${b%%:*}; b=${b#*:}
+	o3=${b%%:*}; b=${b#*:}
+	o4=${b%%:*}; b=${b#*:}
+	o5=${b%%:*}; o6=${b#*:}
+	v=$(printf "%d" "0x$o6") || return 0
+	i=0
+	while [ $i -lt 8 ]; do
+		m=$(printf "%s:%s:%s:%s:%s:%02x" "$o1" "$o2" "$o3" "$o4" "$o5" \
+			$(( (v + i + 1) % 256 )))
+		ip link set dev "eth$i" address "$m" 2>/dev/null
+		i=$((i + 1))
+	done
+	logger -t er12-linksync "eth0-7 MACs assigned (itf+1..+8)"
 }
 
 powered_down() {
@@ -124,6 +152,8 @@ start_service() {
 	config_load linksync
 	load_config
 	INTERVAL=$(poll_ms)
+
+	assign_eth_macs
 
 	logger -t er12-linksync "started (poll=${INTERVAL}ms keepup='$KEEPUP')"
 
