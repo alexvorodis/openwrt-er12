@@ -2,5 +2,5 @@
 config general 'general'
 	option enabled '1'
 	option poll_ms '1000'
-	# netdevs never forced down (MDIO host must stay up)
-	list keepup 'lan9'
+	# MDIO host must stay up
+	list keepup 'eth9'

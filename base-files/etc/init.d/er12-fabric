@@ -3,7 +3,7 @@
 START=18
 STOP=89
 
-TRUNK_SLAVES="lan4 lan5 lan6 lan7"
+TRUNK_SLAVES="itf0 itf1 itf2 itf3"
 VLAN_BASE_DEFAULT=4086
 SWITCH0_VID=4094
 
@@ -70,7 +70,7 @@ set_ipv6_default_policy() {
 
 multicast_guarded_dev() {
 	case "$1" in
-		itf|switch0|lan4|lan5|lan6|lan7)
+		itf|switch0|itf0|itf1|itf2|itf3)
 			return 0
 			;;
 		esac
@@ -185,7 +185,7 @@ ensure_itf() {
 		add_slave "$dev" || true
 	done
 
-	for dev in lan0 lan1 lan2 lan3; do
+	for dev in npi0 npi1 npi2 npi3; do
 		has_dev "$dev" || continue
 		disable_ipv6_dev "$dev"
 		disable_multicast_dev "$dev"
@@ -249,7 +249,7 @@ lock_fabric_ipv6() {
 	disable_ipv6_dev itf
 	disable_multicast_dev itf
 
-	for dev in $TRUNK_SLAVES lan0 lan1 lan2 lan3; do
+	for dev in $TRUNK_SLAVES npi0 npi1 npi2 npi3; do
 		disable_ipv6_dev "$dev"
 		disable_multicast_dev "$dev"
 	done
@@ -284,14 +284,8 @@ start() {
 	done
 	ensure_vlan_dev switch0 "$SWITCH0_VID" || true
 
-	# Bring up if2 ports (VSC8514, panels 1,2,4,5) and add to br-lan
-	for dev in lan0 lan1 lan2 lan3; do
-		has_dev "$dev" || continue
-		disable_ipv6_dev "$dev"
-		disable_multicast_dev "$dev"
-		ip link set dev "$dev" up >/dev/null 2>&1 || true
-		ip link set dev "$dev" master br-lan 2>/dev/null || true
-	done
+	# npi0-3 (VSC8514, panels 4-7): keep down like stock EdgeOS does.
+	# er12-linksync wakes them for link polling only.
 
 	lock_fabric_ipv6
 	set_ipv6_default_policy 0

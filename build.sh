@@ -85,6 +85,11 @@ echo "Copying mii-rd package..."
 mkdir -p package/mii-rd
 cp -r "$SCRIPT_DIR"/pkg/mii-rd/* package/mii-rd/
 
+# Copy base-files overlay (er12-fabric, er12-netmode, board.d, uci-defaults)
+# with stock-style interface names (itf0-3, npi0-3, eth8-11)
+echo "Copying base-files overlay..."
+cp -a "$SCRIPT_DIR"/base-files/* target/linux/octeon/base-files/
+
 # Restore exec bits lost in dmascord's published commit (his working tree had
 # them set; git index says 644 -> init script fails with Permission denied,
 # fabric never comes up and br-lan stays down).

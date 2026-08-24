@@ -7,25 +7,29 @@
 #   link down -> ip link set <dev> down (unless KEEPUP)
 #
 # Port -> MDIO address map verified live 2026-08-24 (PORT_PHY_MAP.md):
-#   lan0..lan3  = phy 08..0b (VSC8514, panels 4-7)
-#   lan8        = phy 06     (panel 8)
-#   lan9        = phy 07     (panel 9)
-#   lan10       = phy 04     (SFP+ #1, panel 10)
-#   lan11       = phy 05     (SFP+ #2, panel 11)
+#   npi0..npi3 = phy 08..0b (VSC8514, panels 4-7)
+#   eth8        = phy 06     (panel 8)
+#   eth9        = phy 07     (panel 9)
+#   eth10       = phy 04     (SFP+ #1, panel 10)
+#   eth11       = phy 05     (SFP+ #2, panel 11)
 #
 # NOTE: a PHY whose netdev is admin-down gets put into power-down by
 # phylib and never reports link. So before trusting BMSR we clear the
 # BMCR power-down bit via the netdev itself (SIOCSMIIREG through the
-# generic phy ioctl of lan9's phydev works for any MDIO address).
+# generic phy ioctl of the MDIO host phydev works for any MDIO address).
 
 PROG=/usr/sbin/mii_rd
-HOST_DEV=lan9
+HOST_DEV=eth9
 
-# Standalone netdevs (panel ports with own PHY)
-MAP="lan0:0x08 lan1:0x09 lan2:0x0a lan3:0x0b lan8:0x06 lan9:0x07 lan10:0x04 lan11:0x05"
+# Standalone netdevs (panel ports with own PHY), stock EdgeOS naming:
+#   eth8/eth9  = panels 8/9 (RJ45 WAN)
+#   eth10/11   = SFP+ slots
+#   itf0..itf3 = bond trunks (panels n/a)
+#   npi0..npi3 = VSC8514 (panels 4-7, unused in stock)
+MAP="npi0:0x08 npi1:0x09 npi2:0x0a npi3:0x0b eth8:0x06 eth9:0x07 eth10:0x04 eth11:0x05"
 
 # QCA8511 internal PHYs behind the switch -> per-port VLAN devs eth0..eth3
-# (panels 0-3 only; panels 4-7 are VSC8514 = lan0-3, already covered by MAP)
+# (panels 0-3 only; panels 4-7 are the npi ports above)
 SMAP="eth0:0x00 eth1:0x01 eth2:0x02 eth3:0x03"
 
 poll_ms() {
@@ -43,7 +47,7 @@ load_config() {
 	[ "$enabled" = "1" ] || exit 0
 	KEEPUP=""
 	config_list_foreach general keepup append_keepup
-	KEEPUP="${KEEPUP:-lan9}"
+	KEEPUP="${KEEPUP:-eth9}"
 }
 
 hexval() {

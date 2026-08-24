@@ -88,7 +88,7 @@
 &pip {
 	interface@0 {
 		ethernet@0 {
-			label = "lan10";
+			label = "eth10";
 			status = "okay";
 			phy-mode = "sgmii";
 			phy-handle = <&phy4>;
@@ -97,7 +97,7 @@
 		};
 
 		ethernet@1 {
-			label = "lan11";
+			label = "eth11";
 			status = "okay";
 			phy-mode = "sgmii";
 			phy-handle = <&phy5>;
@@ -106,11 +106,11 @@
 		};
 
 		ethernet@2 {
-			label = "lan8";
+			label = "eth8";
 		};
 
 		ethernet@3 {
-			label = "lan9";
+			label = "eth9";
 		};
 	};
 
@@ -118,7 +118,7 @@
 		status = "okay";
 
 		ethernet@0 {
-			label = "lan4";
+			label = "itf0";
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
@@ -127,7 +127,7 @@
 		};
 
 		ethernet@1 {
-			label = "lan5";
+			label = "itf1";
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
@@ -136,7 +136,7 @@
 		};
 
 		ethernet@2 {
-			label = "lan6";
+			label = "itf2";
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
@@ -145,7 +145,7 @@
 		};
 
 		ethernet@3 {
-			label = "lan7";
+			label = "itf3";
 			status = "okay";
 			phy-mode = "sgmii";
 			cavium,force-link-up;
@@ -162,7 +162,7 @@
 		reg = <2>;
 
 		ethernet@0 {
-			label = "lan0";
+			label = "npi0";
 			status = "okay";
 			compatible = "cavium,octeon-3860-pip-port";
 			reg = <0>;
@@ -173,7 +173,7 @@
 		};
 
 		ethernet@1 {
-			label = "lan1";
+			label = "npi1";
 			status = "okay";
 			compatible = "cavium,octeon-3860-pip-port";
 			reg = <1>;
@@ -184,7 +184,7 @@
 		};
 
 		ethernet@2 {
-			label = "lan2";
+			label = "npi2";
 			status = "okay";
 			compatible = "cavium,octeon-3860-pip-port";
 			reg = <2>;
@@ -195,7 +195,7 @@
 		};
 
 		ethernet@3 {
-			label = "lan3";
+			label = "npi3";
 			status = "okay";
 			compatible = "cavium,octeon-3860-pip-port";
 			reg = <3>;

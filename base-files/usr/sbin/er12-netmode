@@ -7,9 +7,9 @@ cat <<'USAGE'
 Usage: er12-netmode stock|safe|all [--no-reload]
 
 Modes:
-  stock - stock-like split: LAN on br-lan (switch0), WAN on lan8, WANB on lan9
+  stock - stock-like split: LAN on br-lan (switch0), WAN on eth8, WANB on eth9
   safe  - same as stock, explicit management-safe baseline
-  all   - bridge all front paths: switch0 + lan8 + lan9 + lan10 + lan11
+  all   - bridge all front paths: switch0 + eth8 + eth9 + eth10 + eth11
 USAGE
 }
 
@@ -60,10 +60,10 @@ mode_stock_like() {
 	set_bridge_dev br-lan switch0
 	ensure_iface lan static br-lan
 	uci -q delete network.lan.type || true
-	ensure_iface wan dhcp lan8
-	ensure_iface wanb dhcp lan9
-	ensure_iface sfp0 none lan10
-	ensure_iface sfp1 none lan11
+	ensure_iface wan dhcp eth8
+	ensure_iface wanb dhcp eth9
+	ensure_iface sfp0 none eth10
+	ensure_iface sfp1 none eth11
 
 	uci -q delete network.wan.auto || true
 	uci -q delete network.wanb.auto || true
@@ -94,13 +94,13 @@ mode_stock_like() {
 }
 
 mode_all() {
-	set_bridge_dev lan_all switch0 lan8 lan9 lan10 lan11
+	set_bridge_dev lan_all switch0 eth8 eth9 eth10 eth11
 
 	ensure_iface lan static lan_all
-	ensure_iface wan none lan8
-	ensure_iface wanb none lan9
-	ensure_iface sfp0 none lan10
-	ensure_iface sfp1 none lan11
+	ensure_iface wan none eth8
+	ensure_iface wanb none eth9
+	ensure_iface sfp0 none eth10
+	ensure_iface sfp1 none eth11
 
 	uci set network.wan.auto='0'
 	uci set network.wanb.auto='0'

@@ -1,0 +1,23 @@
+#!/bin/sh
+# ER-12 reset button (GPIO 11, polled via gpio-button-hotplug).
+# Mirrors Ubiquiti stock semantics: hold >=5 s for factory defaults.
+
+[ "$SUBSYSTEM" = "button" ] || exit 0
+[ "$BUTTON" = "reset" ] || exit 0
+
+case "$ACTION" in
+pressed)
+	logger -t er12-button "reset pressed"
+	;;
+released)
+	if [ "${SEEN:-0}" -ge 5 ]; then
+		logger -t er12-button "reset held ${SEEN}s: factory reset (wiping /etc/config)"
+		find /etc/config -type f -delete
+		reboot
+	else
+		logger -t er12-button "reset short press (${SEEN}s): ignored"
+	fi
+	;;
+esac
+
+exit 0
