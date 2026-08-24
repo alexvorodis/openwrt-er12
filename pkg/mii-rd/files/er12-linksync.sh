@@ -12,6 +12,11 @@
 #   lan9        = phy 07     (panel 9)
 #   lan10       = phy 04     (SFP+ #1, panel 10)
 #   lan11       = phy 05     (SFP+ #2, panel 11)
+#
+# NOTE: a PHY whose netdev is admin-down gets put into power-down by
+# phylib and never reports link. So before trusting BMSR we clear the
+# BMCR power-down bit via the netdev itself (SIOCSMIIREG through the
+# generic phy ioctl of lan9's phydev works for any MDIO address).
 
 PROG=/usr/sbin/mii_rd
 HOST_DEV=lan9
@@ -41,17 +46,44 @@ load_config() {
 	KEEPUP="${KEEPUP:-lan9}"
 }
 
+hexval() {
+	n=${1##*[!0-9a-fA-F]}
+	[ -z "$n" ] && n=0
+	echo "$n"
+}
+
 link_bit() {
 	# link_bit <phy_addr> -> 0/1 ; BMSR bit2 via HOST_DEV's phydev ioctl
 	v="$($PROG "$HOST_DEV" "$1" 1 2>/dev/null)" || { echo 0; return; }
-	n=${v##*[!0-9a-fA-F]}
-	[ -z "$n" ] && { echo 0; return; }
-	n=${n#${n%?}}
-	case "$n" in 4|5|6|7|c|C|d|D) echo 1;; *) echo 0;; esac
+	n=$(hexval "$v")
+	case ${n#${n%?}} in 4|5|6|7|c|C|d|D) echo 1;; *) echo 0;; esac
+}
+
+powered_down() {
+	# BMCR bit11 — an admin-down netdev's PHY is powered down and mute
+	v="$($PROG "$HOST_DEV" "$1" 0 2>/dev/null)" || { echo 0; return; }
+	n=$(hexval "$v")
+	[ $(( 0x$n & 0x800 )) -ne 0 ] && { echo 1; return; } || echo 0
+}
+
+wake_phy() {
+	# Clear BMCR power-down on <phy> so it can report link again.
+	# Done through the target netdev so phylib re-attaches cleanly:
+	# simply bringing the netdev up makes phylib resume the PHY.
+	ip link set dev "$1" up 2>/dev/null
 }
 
 sync_once() {
 	state=""
+
+	for pair in $SMAP $MAP; do
+		dev=${pair%%:*}; phy=${pair##*:}
+		if [ "$(powered_down "$phy")" = "1" ]; then
+			wake_phy "$dev"
+			sleep 1
+		fi
+	done
+
 	for pair in $MAP; do
 		dev=${pair%%:*}; phy=${pair##*:}
 		l=$(link_bit "$phy")
@@ -71,7 +103,7 @@ sync_once() {
 		fi
 	done
 
-	# QCA8511 switch ports: mirror panel link into eth0..eth7 admin state.
+	# QCA8511 switch ports: mirror panel link into eth0..eth3 admin state.
 	for pair in $SMAP; do
 		dev=${pair%%:*}; phy=${pair##*:}
 		if [ "$(link_bit "$phy")" = "1" ]; then
