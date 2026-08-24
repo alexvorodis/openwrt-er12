@@ -36,7 +36,13 @@ load_config() {
 	local enabled
 	config_get enabled general enabled 1
 	[ "$enabled" = "1" ] || exit 0
-	KEEPUP="$(config_get general keepup lan9)"
+	# keepup is a UCI list; config_get joins list items with spaces
+	config_list_foreach general keepup append_keepup
+	KEEPUP="${KEEPUP:-lan9}"
+}
+
+append_keepup() {
+	KEEPUP="$KEEPUP $1"
 }
 
 link_bit() {
@@ -88,6 +94,9 @@ start_service() {
 
 	while :; do
 		sync_once >/dev/null 2>&1
-		sleep "$(awk "BEGIN{printf \"%.2f\", $INTERVAL/1000}")"
+		sleep "$((INTERVAL / 100))"
 	done
 }
+
+# executed directly (not sourced) -> run the daemon loop
+start_service
