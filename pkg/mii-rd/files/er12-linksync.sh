@@ -16,7 +16,12 @@
 PROG=/usr/sbin/mii_rd
 HOST_DEV=lan9
 
+# Standalone netdevs (panel ports with own PHY)
 MAP="lan0:0x08 lan1:0x09 lan2:0x0a lan3:0x0b lan8:0x06 lan9:0x07 lan10:0x04 lan11:0x05"
+
+# QCA8511 internal PHYs behind the switch -> per-port VLAN devs eth0..eth7
+# (cosmetic carrier like stock EdgeOS; traffic itself rides switch0/vlan4094)
+SMAP="eth0:0x00 eth1:0x01 eth2:0x02 eth3:0x03 eth4:0x04 eth5:0x05 eth6:0x06 eth7:0x07"
 
 poll_ms() {
 	config_get v general poll_ms 1000
@@ -65,6 +70,19 @@ sync_once() {
 			fi
 		fi
 	done
+
+	# QCA8511 switch ports: mirror panel link into eth0..eth7 admin state.
+	for pair in $SMAP; do
+		dev=${pair%%:*}; phy=${pair##*:}
+		if [ "$(link_bit "$phy")" = "1" ]; then
+			ip link set dev "$dev" up 2>/dev/null
+			state="$state ${dev}=up"
+		else
+			ip link set dev "$dev" down 2>/dev/null
+			state="$state ${dev}=down"
+		fi
+	done
+
 	logger -t er12-linksync "state:$state"
 }
 
