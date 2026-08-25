@@ -23,14 +23,16 @@ HOST_DEV=eth9
 
 # Standalone netdevs (panel ports with own PHY), stock EdgeOS naming:
 #   eth8/eth9  = panels 8/9 (RJ45 WAN)
-#   eth10/11   = SFP+ slots
+#   eth10/eth11 = SFP+ slots
 #   itf0..itf3 = bond trunks (panels n/a)
-#   npi0..npi3 = VSC8514 (panels 4-7, unused in stock)
-MAP="npi0:0x08 npi1:0x09 npi2:0x0a npi3:0x0b eth8:0x06 eth9:0x07 eth10:0x04 eth11:0x05"
+# NOTE: npi0..npi3 are left admin-down (like stock); panel 4-7 link state
+#       is tracked through eth4..eth7 via SMAP below.
+MAP="eth8:0x06 eth9:0x07 eth10:0x04 eth11:0x05"
 
 # QCA8511 internal PHYs behind the switch -> per-port VLAN devs eth0..eth3
-# (panels 0-3 only; panels 4-7 are the npi ports above)
-SMAP="eth0:0x00 eth1:0x01 eth2:0x02 eth3:0x03"
+# (panels 0-3). Panels 4-7 use VSC8514 (MDIO 0x08-0x0b) whose BMSR link bit
+# is a pulse (not steady-state); use ANLPAR (reg 10) partner abilities instead.
+SMAP="eth0:0x00 eth1:0x01 eth2:0x02 eth3:0x03 eth4:0x08 eth5:0x09 eth6:0x0a eth7:0x0b"
 
 poll_ms() {
 	config_get v general poll_ms 1000
@@ -47,7 +49,7 @@ load_config() {
 	[ "$enabled" = "1" ] || exit 0
 	KEEPUP=""
 	config_list_foreach general keepup append_keepup
-	KEEPUP="${KEEPUP:-eth9}"
+	KEEPUP="${KEEPUP:-eth8 eth9 eth10 eth11}"
 }
 
 hexval() {
@@ -68,6 +70,15 @@ link_bit() {
 		[ $(( 0x$n & 4 )) -ne 0 ] && u=$((u + 1))
 	done
 	[ $u -ge 2 ] && echo 1 || echo 0
+}
+
+anlpar_link() {
+	# VSC8514 BMSR link bit is a pulse, not steady-state.
+	# Use ANLPAR (reg 10): partner abilities present => copper link.
+	local p=$1 v n
+	v=$($PROG "$HOST_DEV" "$p" 10 2>/dev/null) || { echo 0; return; }
+	n=$(hexval "$v")
+	[ $(( 0x$n & 0x1f )) -ne 0 ] && echo 1 || echo 0
 }
 
 assign_eth_macs() {
@@ -135,10 +146,15 @@ sync_once() {
 		fi
 	done
 
-	# QCA8511 switch ports: mirror panel link into eth0..eth3 admin state.
+	# Panel ports: mirror PHY link into per-panel netdev admin state.
+	# QCA8511 (0x00-0x03) uses BMSR; VSC8514 (0x08-0x0b) uses ANLPAR.
 	for pair in $SMAP; do
 		dev=${pair%%:*}; phy=${pair##*:}
-		if [ "$(link_bit "$phy")" = "1" ]; then
+		case "$phy" in
+			0x08|0x09|0x0a|0x0b) l=$(anlpar_link "$phy") ;;
+			*) l=$(link_bit "$phy") ;;
+		esac
+		if [ "$l" = "1" ]; then
 			ip link set dev "$dev" up 2>/dev/null
 			state="$state ${dev}=up"
 		else

@@ -57,18 +57,19 @@
 +					vlan_rc = __vlan_get_tag(skb, &vlan_tci);
 +					if (vlan_rc) {
 +						/*
-+						 * Untagged ingress from QCA8511 must be presented
-+						 * through switch0 (VID 4094 in stock-style fabric).
++						 * Untagged ingress from QCA8511 is presented
++						 * through the LAN dev (eth0, base VID): kernel
++						 * vlan demux then delivers it with skb->dev=eth0.
 +						 */
 +						skb = vlan_insert_tag(skb, htons(ETH_P_8021Q),
-+								      cvm_oct_get_vlan_switch0_vid());
++								      cvm_oct_get_vlan_base_vid());
 +					} else {
 +						u16 vlan_id = vlan_tci & VLAN_VID_MASK;
 +
 +						if (vlan_id > 0 &&
 +						    vlan_id < cvm_oct_get_vlan_base_vid())
 +							skb = vlan_insert_tag(skb, htons(ETH_P_8021Q),
-+								      cvm_oct_get_vlan_switch0_vid());
++								      cvm_oct_get_vlan_base_vid());
 +					}
 +
 +					if (unlikely(!skb))

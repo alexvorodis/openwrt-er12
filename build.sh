@@ -71,9 +71,17 @@ fi
 # Apply our fixups on top of the base commit.
 # dmascord's ER-12 commit ships patch 711 empty while 709/710/714 call
 # its accessors - overwrite it with a working implementation.
+# We also override 709 so fabric frames are tagged with base VID (eth0)
+# instead of switch0 VID: kernel vlan demux then delivers to eth0@itf,
+# making odhcpd/neigh see LAN frames on the right device.
 echo "Copying extra kernel patches..."
 mkdir -p target/linux/octeon/patches-6.18
+cp "$SCRIPT_DIR"/patches/6.18/709-*.patch target/linux/octeon/patches-6.18/
 cp "$SCRIPT_DIR"/patches/6.18/711-*.patch target/linux/octeon/patches-6.18/
+
+# Our 714 pops ALL fabric VIDs (base..base+7) plus switch0 VID on egress:
+# LAN lives on eth0@itf (tag base), which must reach the QCA8511 untagged.
+cp "$SCRIPT_DIR"/patches/6.18/714-*.patch target/linux/octeon/patches-6.18/
 
 # Copy our corrected DTS (MAC offsets fixed to match live vendor DT)
 echo "Copying DTS..."

@@ -70,7 +70,7 @@ set_ipv6_default_policy() {
 
 multicast_guarded_dev() {
 	case "$1" in
-		itf|switch0|itf0|itf1|itf2|itf3)
+		itf|switch0|itf0|itf1|itf2|itf3|npi0|npi1|npi2|npi3)
 			return 0
 			;;
 		esac
@@ -127,6 +127,60 @@ enable_ipv6_dev() {
 		echo 1 > "/proc/sys/net/ipv6/conf/${dev}/autoconf" 2>/dev/null || true
 }
 
+ipv6_linklocal_only() {
+	local dev="$1"
+
+	[ -n "$dev" ] || return 0
+	[ -d /proc/sys/net/ipv6/conf ] || return 0
+	[ -e "/proc/sys/net/ipv6/conf/${dev}/disable_ipv6" ] || return 0
+
+	echo 0 > "/proc/sys/net/ipv6/conf/${dev}/disable_ipv6" 2>/dev/null || true
+	[ -e "/proc/sys/net/ipv6/conf/${dev}/accept_ra" ] && \
+		echo 0 > "/proc/sys/net/ipv6/conf/${dev}/accept_ra" 2>/dev/null || true
+	[ -e "/proc/sys/net/ipv6/conf/${dev}/autoconf" ] && \
+		echo 0 > "/proc/sys/net/ipv6/conf/${dev}/autoconf" 2>/dev/null || true
+}
+
+migrate_lan_dev() {
+	local dev idx type name
+
+	dev="$(uci -q get network.lan.device)" || return 0
+	[ "$dev" = "br-lan" ] || return 0
+
+	idx=0
+	while true; do
+		type="$(uci -q get "network.@device[${idx}].type" 2>/dev/null)" || break
+		name="$(uci -q get "network.@device[${idx}].name" 2>/dev/null)" || name="$type"
+		if [ "$name" = "br-lan" ] || [ "$name" = "lan" ]; then
+			uci -q delete "network.@device[${idx}]" || break
+			continue
+		fi
+		idx=$((idx + 1))
+	done
+
+	uci set network.lan.device="eth0"
+	uci commit network
+	logger -t er12-fabric "migrated LAN from br-lan to eth0"
+}
+
+assign_eth_macs() {
+	local b o1 o2 o3 o4 o5 o6 v i m
+	b=$(cat /sys/class/net/itf/address 2>/dev/null) || return 0
+	o1=${b%%:*}; b=${b#*:}
+	o2=${b%%:*}; b=${b#*:}
+	o3=${b%%:*}; b=${b#*:}
+	o4=${b%%:*}; b=${b#*:}
+	o5=${b%%:*}; o6=${b#*:}
+	v=$(printf "%d" "0x$o6") || return 0
+	i=0
+	while [ $i -lt 8 ]; do
+		m=$(printf "%s:%s:%s:%s:%s:%02x" "$o1" "$o2" "$o3" "$o4" "$o5" \
+			$(( (v + i + 1) % 256 )))
+		ip link set dev "eth$i" address "$m" 2>/dev/null
+		i=$((i + 1))
+	done
+}
+
 remove_unwanted_slaves() {
 	local slaves dev wanted keep
 
@@ -176,14 +230,29 @@ ensure_itf() {
 			|| return 1
 	fi
 
-	disable_ipv6_dev itf
-	disable_multicast_dev itf
+	ipv6_linklocal_only itf
 	ip link set dev itf down >/dev/null 2>&1 || true
 
 	remove_unwanted_slaves
 	for dev in $TRUNK_SLAVES; do
 		add_slave "$dev" || true
 	done
+
+	# itf + slaves use jumbo frames (MTU 9000) like stock EdgeOS.
+	local cur_mtu
+	cur_mtu="$(cat /sys/class/net/itf/mtu 2>/dev/null)" || true
+	if [ "$cur_mtu" != "9000" ]; then
+		for dev in $TRUNK_SLAVES; do
+			has_dev "$dev" || continue
+			echo "-${dev}" > /sys/class/net/itf/bonding/slaves 2>/dev/null || true
+			ip link set dev "$dev" mtu 9000 >/dev/null 2>&1 || true
+		done
+		for dev in $TRUNK_SLAVES; do
+			has_dev "$dev" || continue
+			add_slave "$dev" || true
+		done
+		ip link set dev itf mtu 9000 >/dev/null 2>&1 || true
+	fi
 
 	for dev in npi0 npi1 npi2 npi3; do
 		has_dev "$dev" || continue
@@ -220,8 +289,6 @@ ensure_vlan_dev() {
 
 	if has_dev "$name"; then
 		if vlan_link_ok "$name" "$vid"; then
-			disable_ipv6_dev "$name"
-			disable_multicast_dev "$name"
 			ip link set dev "$name" up >/dev/null 2>&1 || true
 			return 0
 		fi
@@ -237,8 +304,6 @@ ensure_vlan_dev() {
 	fi
 
 	ip link add link itf name "$name" type vlan id "$vid" >/dev/null 2>&1 || return 1
-	disable_ipv6_dev "$name"
-	disable_multicast_dev "$name"
 	ip link set dev "$name" up >/dev/null 2>&1 || true
 	return 0
 }
@@ -246,18 +311,15 @@ ensure_vlan_dev() {
 lock_fabric_ipv6() {
 	local dev idx
 
-	disable_ipv6_dev itf
-	disable_multicast_dev itf
+	ipv6_linklocal_only itf
 
 	for dev in $TRUNK_SLAVES npi0 npi1 npi2 npi3; do
 		disable_ipv6_dev "$dev"
-		disable_multicast_dev "$dev"
 	done
 
 	idx=0
 	while [ "$idx" -lt 8 ]; do
-		disable_ipv6_dev "eth${idx}"
-		disable_multicast_dev "eth${idx}"
+		ipv6_linklocal_only "eth${idx}"
 		idx=$((idx + 1))
 	done
 }
@@ -266,6 +328,8 @@ start() {
 	local idx base_vid
 
 	is_er12 || return 0
+	migrate_lan_dev
+
 	set_ipv6_default_policy 1
 
 	base_vid="$(get_base_vid)"
@@ -284,14 +348,15 @@ start() {
 	done
 	ensure_vlan_dev switch0 "$SWITCH0_VID" || true
 
-	# npi0-3 (VSC8514, panels 4-7): keep down like stock EdgeOS does.
-	# er12-linksync wakes them for link polling only.
+	assign_eth_macs
+
+	# npi0-3 (VSC8514, panels 4-7): keep admin-down like stock EdgeOS.
+	# er12-linksync syncs eth0-7 admin state per PHY link (ANLPAR for panels 4-7).
 
 	lock_fabric_ipv6
 	set_ipv6_default_policy 0
 	lock_fabric_ipv6
-	enable_ipv6_dev switch0
-	enable_multicast_dev switch0
+	ipv6_linklocal_only switch0
 
 	logger -t er12-fabric "prepared stock-style fabric: itf trunks=${TRUNK_SLAVES}, base_vid=${base_vid}, eth0-eth7, switch0"
 }

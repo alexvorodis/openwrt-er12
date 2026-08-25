@@ -19,8 +19,24 @@ ubnt,edgerouter-6p)
 	ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4 lan5" "lan0"
 	;;
 ubnt,edgerouter-12)
-	# ER-12: config_generate will create br-lan with switch0 as its port.
-	ucidef_set_interface_lan "switch0"
+	# Stock EdgeOS keeps LAN L3 directly on eth0@itf (no bridge). The
+	# board.json -> config_generate path force-bridges "lan", so write the
+	# UCI straight here. touch makes config_generate skip its network block.
+	touch /etc/config/network
+	uci -q batch <<EOF
+set network.loopback='interface'
+set network.loopback.device='lo'
+set network.loopback.proto='static'
+add_list network.loopback.ipaddr='127.0.0.1/8'
+set network.globals='globals'
+set network.globals.dhcp_default_duid='auto'
+set network.lan='interface'
+set network.lan.device='eth0'
+set network.lan.proto='static'
+set network.lan.ipaddr='192.168.1.1/24'
+set network.lan.ip6assign='60'
+EOF
+	[ -e /proc/sys/net/ipv6 ] && uci -q set network.globals.ula_prefix='auto'
 	;;
 cisco,vedge1000)
 	ucidef_set_interfaces_lan_wan "mgmt0" "lan0"

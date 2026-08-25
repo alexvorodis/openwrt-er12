@@ -13,6 +13,9 @@ released)
 	if [ "${SEEN:-0}" -ge 5 ]; then
 		logger -t er12-button "reset held ${SEEN}s: factory reset (wiping /etc/config)"
 		find /etc/config -type f -delete
+		# board.json outlives the wipe; drop it so board.d/01_network runs
+		# again and recreates the LAN interface on next boot.
+		rm -f /etc/board.json
 		reboot
 	else
 		logger -t er12-button "reset short press (${SEEN}s): ignored"

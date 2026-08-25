@@ -7,7 +7,7 @@ cat <<'USAGE'
 Usage: er12-netmode stock|safe|all [--no-reload]
 
 Modes:
-  stock - stock-like split: LAN on br-lan (switch0), WAN on eth8, WANB on eth9
+  stock - stock-like split: LAN on eth0, WAN on eth8, WANB on eth9
   safe  - same as stock, explicit management-safe baseline
   all   - bridge all front paths: switch0 + eth8 + eth9 + eth10 + eth11
 USAGE
@@ -53,12 +53,12 @@ set_bridge_dev() {
 }
 
 mode_stock_like() {
-	# Stock behavior keeps switch0 as the underlying LAN port via br-lan.
-	uci -q delete network.switch0dev || true
+	# Stock behavior: LAN directly on eth0 (no bridge).
 	uci -q delete network.lan_all || true
+	uci -q delete network.br-lan || true
+	uci -q delete network.switch0dev || true
 
-	set_bridge_dev br-lan switch0
-	ensure_iface lan static br-lan
+	ensure_iface lan static eth0
 	uci -q delete network.lan.type || true
 	ensure_iface wan dhcp eth8
 	ensure_iface wanb dhcp eth9
@@ -75,13 +75,6 @@ mode_stock_like() {
 	uci -q delete network.lan.ipv6 || true
 	uci set network.lan.ip6assign='60'
 	uci -q delete network.lan.delegate || true
-
-	if uci -q get network.br-lan >/dev/null 2>&1; then
-		uci -q delete network.br-lan.ipv6
-	fi
-	if uci -q get network.switch0 >/dev/null 2>&1; then
-		uci -q delete network.switch0.ipv6
-	fi
 
 	if uci -q get dhcp.lan >/dev/null 2>&1; then
 		uci set dhcp.lan.dhcpv6='server'

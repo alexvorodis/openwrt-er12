@@ -87,8 +87,10 @@
 
 &pip {
 	interface@0 {
+		/* Stock EdgeOS names the first PIP if0 port (MDIO 4, MAC+0)
+		 * eth11 and the second (MDIO 5, MAC+1) eth10 - keep that. */
 		ethernet@0 {
-			label = "eth10";
+			label = "eth11";
 			status = "okay";
 			phy-mode = "sgmii";
 			phy-handle = <&phy4>;
@@ -97,7 +99,7 @@
 		};
 
 		ethernet@1 {
-			label = "eth11";
+			label = "eth10";
 			status = "okay";
 			phy-mode = "sgmii";
 			phy-handle = <&phy5>;
