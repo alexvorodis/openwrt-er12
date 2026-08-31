@@ -238,22 +238,6 @@ ensure_itf() {
 		add_slave "$dev" || true
 	done
 
-	# itf + slaves use jumbo frames (MTU 9000) like stock EdgeOS.
-	local cur_mtu
-	cur_mtu="$(cat /sys/class/net/itf/mtu 2>/dev/null)" || true
-	if [ "$cur_mtu" != "9000" ]; then
-		for dev in $TRUNK_SLAVES; do
-			has_dev "$dev" || continue
-			echo "-${dev}" > /sys/class/net/itf/bonding/slaves 2>/dev/null || true
-			ip link set dev "$dev" mtu 9000 >/dev/null 2>&1 || true
-		done
-		for dev in $TRUNK_SLAVES; do
-			has_dev "$dev" || continue
-			add_slave "$dev" || true
-		done
-		ip link set dev itf mtu 9000 >/dev/null 2>&1 || true
-	fi
-
 	for dev in npi0 npi1 npi2 npi3; do
 		has_dev "$dev" || continue
 		disable_ipv6_dev "$dev"
@@ -268,6 +252,18 @@ ensure_itf() {
 
 	ip link set dev itf up >/dev/null 2>&1 || true
 	return 0
+}
+
+set_trunk_jumbo() {
+	local dev
+
+	# Raise bond + slaves to MTU 9000 (jumbo, like stock EdgeOS).
+	# Vlan sub-devs on itf (eth0-7, switch0) don't follow when parent
+	# MTU increases, so they stay at 1500 — matching stock.
+	for dev in $TRUNK_SLAVES; do
+		ip link set dev "$dev" mtu 9000 >/dev/null 2>&1 || true
+	done
+	ip link set dev itf mtu 9000 >/dev/null 2>&1 || true
 }
 
 vlan_link_ok() {
@@ -308,6 +304,17 @@ ensure_vlan_dev() {
 	return 0
 }
 
+set_vlan_mtu() {
+	local name="$1"
+	local mtu="$2"
+
+	[ -e "/sys/class/net/${name}" ] || return 0
+	local cur
+	cur="$(cat "/sys/class/net/${name}/mtu" 2>/dev/null)" || return 0
+	[ "$cur" = "$mtu" ] && return 0
+	ip link set dev "$name" mtu "$mtu" >/dev/null 2>&1 || true
+}
+
 lock_fabric_ipv6() {
 	local dev idx
 
@@ -341,12 +348,16 @@ start() {
 		return 0
 	}
 
+	# Create vlan devs BEFORE raising bond to 9000 so they inherit MTU 1500.
 	idx=0
 	while [ "$idx" -lt 8 ]; do
 		ensure_vlan_dev "eth${idx}" "$((base_vid + idx))" || true
 		idx=$((idx + 1))
 	done
 	ensure_vlan_dev switch0 "$SWITCH0_VID" || true
+
+	# Now raise the bond + slaves to jumbo (MTU 9000); vlan devs stay at 1500.
+	set_trunk_jumbo
 
 	assign_eth_macs
 

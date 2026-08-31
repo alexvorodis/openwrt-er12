@@ -34,9 +34,7 @@ set network.lan='interface'
 set network.lan.device='eth0'
 set network.lan.proto='static'
 set network.lan.ipaddr='192.168.1.1/24'
-set network.lan.ip6assign='60'
 EOF
-	[ -e /proc/sys/net/ipv6 ] && uci -q set network.globals.ula_prefix='auto'
 	;;
 cisco,vedge1000)
 	ucidef_set_interfaces_lan_wan "mgmt0" "lan0"

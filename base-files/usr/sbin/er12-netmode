@@ -71,11 +71,6 @@ mode_stock_like() {
 	uci set network.sfp0.auto='0'
 	uci set network.sfp1.auto='0'
 
-	# Keep LAN IPv6 enabled in stock mode.
-	uci -q delete network.lan.ipv6 || true
-	uci set network.lan.ip6assign='60'
-	uci -q delete network.lan.delegate || true
-
 	if uci -q get dhcp.lan >/dev/null 2>&1; then
 		uci set dhcp.lan.dhcpv6='server'
 		uci set dhcp.lan.ra='server'
