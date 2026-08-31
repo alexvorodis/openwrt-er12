@@ -58,6 +58,14 @@ CN7130
 | 4–7 | `0x000704c2` | VSC8504 quad PHY, if0 group |
 | 8–11 | `0x00070670` | VSC8514 quad PHY, if2 group |
 
+## Gallery
+
+![Front panel with all ports](img/er12-1.png)
+
+![Board internals — QCA8511 switch chip](img/er12-2.png)
+
+![Serial console + running system](img/er12-3.png)
+
 ## How the LAN fabric works
 
 The 8 LAN ports are untagged access ports. Traffic from any panel arrives via
