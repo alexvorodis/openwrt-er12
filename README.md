@@ -32,147 +32,105 @@ openwrt-octeon-generic-ubnt_edgerouter-12-squashfs-sysupgrade.tar (~19 MB)
 
 ## Port layout
 
-The panel labels and the kernel interface names are **not** the same, and the
-ports are distributed over three SoC Ethernet interfaces with different PHYs.
-
-The 8 LAN RJ45 ports are **not** wired straight to the SoC. A board photo +
-vendor U-Boot dump (OpenWrt forum thread "Support possible for the new Ubiquiti
-EdgeRouter 12?", lemmi) shows a **QCA8511 switch chip** in between: both LAN PHY
-groups hang off it, and vendor U-Boot initializes it on every boot (`Net:
-QCA8511 Init done` — our kernel never touches it; the config survives the OS
-handoff). This is why if2-group panels work even when the kernel-side `if2`
-interfaces are down (see "How the LAN fabric works").
+The 8 LAN ports (panels 0–7) sit behind a **QCA8511 switch chip** initialized
+only by vendor U-Boot. The kernel sees a single PIP interface 1 with 4 SGMII
+uplinks from the switch, which are bonded together for redundancy and
+throughput.
 
 ```
 CN7130
-├── if0 (QSGMII) → VSC8504 quad PHY (MDIO 4–7, id 0x000704c2)
-│   ├── panel 8  → lan8    RJ45, WAN side
-│   ├── panel 9  → lan9    RJ45, WAN side
-│   ├── panel 10 → lan10   SFP+
-│   └── panel 11 → lan11   SFP+
+├── if0 (QSGMII) → VSC8504 quad PHY (MDIO 4–7)
+│   ├── panel 8  → eth8   RJ45, WAN side
+│   ├── panel 9  → eth9   RJ45, WAN side
+│   ├── panel 10 → eth10  SFP+
+│   └── panel 11 → eth11  SFP+
 │
-├── if1 (QSGMII) → QCA8511 ── 4× SGMII → 4× AR8033 (MDIO 0–3)
-│   │                   └── 4× SGMII → VSC8514 quad PHY (MDIO 8–11, id 0x00070670)
-│   └── panels 0, 3, 6, 7 → lan4–lan7   (bond members, see fabric below)
-│       panels 1, 2, 4, 5 reach the kernel through QCA8511's internal L2
-│       forwarding onto the if1 uplink — not via their own SoC interface.
+├── if1 (QSGMII) → QCA8511 (panels 0–7)
+│   └── 4× SGMII uplinks → bond "itf" → VLAN subinterfaces eth0–eth7, switch0
 │
 └── if2 (QSGMII) → VSC8514 quad PHY (MDIO 8–11)
-    └── panels 1, 2, 4, 5 → lan0–lan3   (kernel-side path; parallel to the
-                                         QCA8511-internal one, usually idle)
+    └── npi0–npi3 (panels 4–7, kept admin-down like stock EdgeOS)
 ```
 
-Live MDIO bus map on this board (`/sys/bus/mdio_bus/devices/8001180000001800`):
-
-| MDIO addr | PHY id | What it is | Kernel driver bound |
-|-----------|--------|------------|---------------------|
-| 0–3 | `0x004dd074` (Atheros) | AR8033, if1 group | qualcomm Atheros AR8033 ✓ |
-| 4–7 | `0x000704c2` | VSC8504 quad PHY, if0 group (per U-Boot mdio list) | none (6/7: Generic PHY) |
-| 8–11 | `0x00070670` | "VSC8514" port PHYs, if2 group | none — the DTS `compatible = "vitesse,vsc8514"` blocks even the generic fallback; the chip answers with a Broadcom OUI (0x0007), so its real identity is unconfirmed |
-
-How the mapping was established — full cable A/B test on the live board (panels
-0–7 one by one, bond TX/RX counters checked each time):
-
-- **panel 0 → lan4**: confirmed by TX counter (bond hash selected lan4 for
-  host→router traffic; all other slaves had zero TX). First port tested, most
-  reliable result.
-- **panels 1, 2, 4, 5 → if2 group (VSC8514)**: lan0–lan3 stayed admin-down
-  with zero TX/RX counters on every test. The VSC8514 PHYs (phy8–11, id
-  `0x00070670`) are present on the MDIO bus but no driver binds to them. Host
-  traffic still reaches the router via the bond — the forwarding happens inside
-  the QCA8511 switch chip (see above), not in the kernel. Re-verified live:
-  with a host cabled into panel 1 and lan0–lan3 completely down/unbridged, ping
-  loss was 0 %; bringing lan0–lan3 up (PCS recovery fires on iface=2, carrier
-  forced to 1) still shows rx=tx≈0 — the kernel-side if2 is a parallel path that
-  normally carries no unicast traffic.
-- **panels 3, 6, 7 → if1 group (bond)**: traffic works, host reachable. The
-  bond balance-xor hash always picks the same slave for a given MAC/IP pair, so
-  per-panel distinction inside the bond requires physical cable pull (not done
-  this round — mapping by elimination from if2 confirmed as non-functional).
-- **panel 0 → lan4** was the only test where the TX counter moved on a single
-  slave (first test, clean counters). Subsequent tests all showed lan4 because
-  the bond hash is deterministic — the QCA8511 chip learns the router MAC from
-  the if1 uplink and funnels host traffic onto that bond regardless of physical
-  panel.
-
-> **Important:** panels 8/9 (`lan8`/`lan9`, if0) belong to a separate L2 domain —
-> the WAN side of the board. They are **not** part of the LAN fabric and are
-> intended for WAN interfaces (one or two ISPs). Do not bridge them into `br-lan`.
+| MDIO addr | PHY id | What it is |
+|-----------|--------|------------|
+| 0–3 | `0x004dd074` | AR8033 (QCA8511 internal PHYs, panels 0–3) |
+| 4–7 | `0x000704c2` | VSC8504 quad PHY, if0 group |
+| 8–11 | `0x00070670` | VSC8514 quad PHY, if2 group |
 
 ## How the LAN fabric works
 
-The ER-12 has no DSA-capable switch in the kernel's view; the 8 LAN RJ45 ports
-are split over two PHY groups (4× AR8033 behind if1, 4× VSC8514 behind if2),
-and both groups sit behind the QCA8511 board-level switch chip. All 8 panels
-are functional; only the AR8033/if1 group carries kernel-visible traffic (see
-point 4).
+The 8 LAN ports are untagged access ports. Traffic from any panel arrives via
+the QCA8511 on one of the 4 if1 uplinks, which are bonded as `itf`. VLAN
+subinterfaces (`eth0–eth7`, `switch0`) sit on top of the bond, each with a
+dedicated VID.
 
-1. `etc/init.d/er12-fabric` (START=18) at boot:
-   - creates a Linux bond `itf` (balance-xor, miimon) from `lan4 lan5 lan6 lan7`
-     (the four if1 MACs);
-   - creates VLAN sub-interfaces on top of `itf`: `eth0..eth7` = VID 4086–4093
-     and `switch0` = VID 4094;
-   - `switch0` is the only port of the `br-lan` bridge (default 192.168.1.1/24);
-   - brings up `lan0..lan3` (if2, VSC8514) and adds them to `br-lan`;
-   - sets the driver module parameters
-     `er12_vlan_aware=1`, `er12_vlan_base_vid=4086`,
-     `er12_vlan_switch0_vid=4094`;
-   - disables IPv6 on the fabric devices (`itf`, `lan4-7`, `lan0-3`, `eth0-7`),
-     leaves it enabled on `switch0`.
-2. The patched `octeon_ethernet` driver runs in "VLAN-aware" mode on if1:
-   untagged frames received on the bond are tagged with VID 4094, and frames
-   destined for VID 4094 are untagged on egress (patches 709/710/714).
-   This makes the 4 if1 ports behave as untagged access ports in the 4094
-   "switch" domain.
- 3. The if2-group panels (1/2/4/5) reach the kernel through QCA8511's internal
-    L2 forwarding onto the if1 uplink, so their frames enter via the bond and
-    are handled exactly like AR8033 traffic (tagged VID 4094 by point 2). The
-    chip itself is initialized only by vendor U-Boot; no kernel driver binds to
-    its MDIO ports (`CONFIG_MICROSEMI_PHY=y` is set but nothing matches id
-    `0x00070670`).
- 4. The kernel-side if2 interfaces (lan0–lan3) are a parallel path: they come
-    up via PCS recovery (patch 706, carrier forced to 1 by
-    `cavium,force-link-up`) and are bridged into `br-lan` as independent ports,
-    but normally carry no unicast traffic — frames between the two panel groups
-    never cross the CN7130↔VSC8514 SGMII uplink. Broadcast tests showed no
-    loop-back through this path either. Leaving them in `br-lan` is harmless;
-    removing them changes nothing functionally.
- 5. Result: **all 8 LAN RJ45 ports (panels 0–7) are untagged access ports of
-    `br-lan`** — physically all of them, via the QCA8511 chip onto the if1
-    bond; kernel-wise, traffic arrives only on `switch0`.
+1. **Boot (er12-fabric, START=18):**
+   - creates Linux bond `itf` (balance-xor, miimon 100) from `itf0–itf3`
+     (the four if1 PIP ports), sets MTU **9000** on bond + slaves;
+   - creates VLAN sub-interfaces on `itf`: `eth0–eth7` (VID 4086–4093) and
+     `switch0` (VID 4094), MTU **1500**;
+   - sets MAC addresses on `eth0–eth7` = itf MAC +1 … +8 (stock naming);
+   - keeps `npi0–npi3` (if2, VSC8514) **admin-down** like stock EdgeOS;
+   - enables IPv6 link-local (fe80 only, no ULA) on `eth0`, `itf`, `switch0`;
+   - LAN interface configured directly on **`eth0`** (192.168.1.1/24, no bridge).
+
+2. **Kernel patches** (vlan-aware fabric on if1):
+   - **709 (RX):** untagged frames from QCA8511 are tagged with VID 4086
+     (base VID). The kernel's 8021q demux delivers them to `eth0@itf` —
+     the LAN device. This is how stock EdgeOS works: the tag determines which
+     netdev sees the frame.
+   - **710/714 (TX):** frames sent out eth0 are tagged with the correct VID
+     by the vlan driver; on egress from if1 the tag is popped (714 handles
+     all fabric VIDs 4086–4093 plus 4094).
+   - **716:** frames reflected back by the switch with our own MAC as source
+     are dropped (prevents "own address" warnings and loops).
+
+3. **Link sync (er12-linksync):** polls the BMSR / ANLPAR of every panel PHY
+   over MDIO and mirrors the link state into the admin state of the matching
+   netdev:
+   - panels 0–3 (QCA8511 AR8033, MDIO 0–3): BMSR link bit, reliable;
+   - panels 4–7 (VSC8514, MDIO 8–11): **ANLPAR reg 10** (partner abilities
+     present), because BMSR on VSC8514 is pulse-only and not steady-state;
+   - panels 8–9 and SFP 10–11: BMSR via vsc8504 / SFP PHY.
+
+4. **Result:** `eth0` receives all LAN traffic via kernel vlan demux;
+   `eth1–eth7` are per-panel representors (no data path); `switch0` is the
+   fabric catch-all (emergency bridging via `er12-netmode all`).
 
 ## Kernel patches
 
-All patches live in `target/linux/octeon/patches-6.18/` of the build fork:
+All patches live in `patches/6.18/` and are copied into the build tree by
+`build.sh`:
 
 | Patch | Purpose |
 |-------|---------|
-| 700-allocate_interface_by_label | netdev labels from DTS (`lan0`…`lan11`) |
+| 700-allocate_interface_by_label | netdev labels from DTS |
 | 701-honor_sgmii_node_device_tree_status | respect `status="disabled"` on SGMII nodes |
-| 702-qca833x-force-pcs-reset | force PCS reset for QCA SGMII parts (backport from U-Boot) |
+| 702-qca833x-force-pcs-reset | force PCS reset for QCA SGMII parts |
 | 703-ubnt-e300-if2-sgmii | ER-12 wires interface 2 via SGMII, not NPI |
 | 704-ubnt-e300-qca8511-forcelink | DT property `cavium,force-link-up` for switch-backed ports |
 | 705-ubnt-e300-dt-pcs-reset-on-open | PCS reset when the MDIO device is opened |
 | 706-ubnt-e300-pcs-recovery-linkup | PCS recovery / link-up handling |
 | 707-ubnt-e300-if2-reset-timeout-recovery | reset-timeout recovery for the if1/if2 switch path |
 | 708-ubnt-e300-honor-force-link-up-in-adjust-link | honour `force-link-up` in `adjust_link` |
-| 709-ubnt-e300-er12-vlan-switch0-rx-tagging | RX on if1: untagged → tag VID 4094 |
-| 710-ubnt-e300-er12-vlan-switch0-tx-untagging | TX on if1: pop VID 4094 on egress |
-| 714-ubnt-e300-er12-switch0-pop-single-tag | pop the tag even for single-tagged frames |
-| 715-ubnt-e300-er12-early-fixed-link-before-deprecated-warn | stable fixed 1G/full link state on if1 |
-| 716-ubnt-e300-er12-drop-switch0-reflected-self-src | drop frames reflected back by switch0 with our own MAC as source |
+| 709-ubnt-e300-er12-vlan-switch0-rx-tagging | **RX:** tag untagged if1 frames with base VID (4086 → eth0) |
+| 710-ubnt-e300-er12-vlan-switch0-tx-untagging | TX: pop VID 4094 on egress for switch0 |
+| 711-ubnt-er12-vlan-aware-controls | module params: `er12_vlan_{aware,base_vid,switch0_vid}` |
+| 714-ubnt-e300-er12-switch0-pop-single-tag | **TX:** pop all fabric VIDs (4086–4093 + 4094) on egress |
+| 715-ubnt-e300-er12-early-fixed-link | stable 1G/full link state on if1 |
+| 716-ubnt-e300-er12-drop-switch0-reflected-self-src | drop frames with our own MAC as source |
 
-Note: the upstream pull request also contained four **empty** patches
-(711, 712, 713, 999_add_npi_for_cn7xxxx) — they break patch application and were
-removed.
-
-## Userspace additions (`target/linux/octeon/base-files`)
+## Userspace additions (`base-files/`)
 
 | File | Purpose |
 |------|---------|
-| `etc/init.d/er12-fabric` | sets up the stock-style fabric described above |
-| `etc/board.d/01_network` | first boot: LAN = `br-lan`/`switch0`. **WAN is deliberately not preconfigured** — configure it for your own upstream |
-| `etc/uci-defaults/99-luci-ucode` | LuCI 26.x needs the uhttpd ucode prefix (`/cgi-bin/luci=/usr/share/ucode/luci/uhttpd.uc`); `luci-base` postinst is skipped during image builds, so it is applied on first boot instead |
+| `etc/init.d/er12-fabric` | sets up the LAN fabric: bond itf (MTU 9000), VLAN devs eth0–7 + switch0 (MTU 1500), MAC assignment, IPv6 policy |
+| `etc/board.d/01_network` | first boot: LAN = eth0 direct (192.168.1.1/24, no br-lan) |
+| `etc/hotplug.d/button/20-reset` | factory reset (≥ 5 s hold), removes board.json for re-detection |
+| `usr/sbin/er12-netmode` | switch between `stock` (eth0 LAN), `safe` (same), and `all` (emergency bridge switch0+WAN) |
+| `usr/sbin/mii_rd` | MDIO read utility for linksync |
+| `etc/config/linksync` + init script | per-port link sync daemon (procd-managed, respawn) |
 
 ## Building
 
@@ -199,8 +157,8 @@ Output: `openwrt/bin/targets/octeon/generic/openwrt-octeon-generic-ubnt_edgerout
 ### What build.sh does
 
 1. Clones [dmascord/openwrt](https://github.com/dmascord/openwrt) (branch
-   `openwrt/add-ubiquiti-er-12`, commit `2cd1a10829`)
-2. Applies the ER-12 kernel patches (703–716 + 900 device definition)
+   `openwrt/add-ubiquiti-er-12`)
+2. Applies our kernel patches (700–716)
 3. Copies the DTS, base-files overlay, and `.config`
 4. Runs `feeds update`, `feeds install`, `make world`
 
@@ -210,10 +168,11 @@ Output: `openwrt/bin/targets/octeon/generic/openwrt-octeon-generic-ubnt_edgerout
 openwrt-er12/
 ├── build.sh              ← automated build script
 ├── config/.config        ← full defconfig (octeon/generic + LuCI)
-├── patches/6.18/         ← kernel patches (703-716, 900 device)
+├── patches/6.18/         ← kernel patches (700–716)
 ├── dts/                  ← device tree source
 ├── base-files/           ← userspace overlay (er12-fabric, board.d, etc.)
-├── README.md             ← this file (hardware, patches, status)
+├── pkg/mii-rd/           ← MDIO read utility + linksync daemon
+├── README.md             ← this file
 └── INSTALL.md            ← flashing and first-boot guide
 ```
 
@@ -221,30 +180,29 @@ openwrt-er12/
 
 | Feature | Status |
 |---------|--------|
-| LAN ports 0, 3, 6, 7 (if1, AR8033, bond) | ✅ working, verified by cable A/B test |
-| LAN ports 1, 2, 4, 5 (if2, VSC8514) | ✅ working — via QCA8511 internal L2 forwarding onto the if1 bond (verified live with kernel-side if2 down); PCS recovery runs for iface=2 when lan0–3 are brought up |
-| WAN ports 8–9 (RJ45) | ✅ working (DHCP tested on both) |
-| SFP 10–11 | ⚠️ defined in DTS, untested (no transceivers available) |
+| LAN ports 0–7 (QCA8511 → if1 bond) | ✅ all working, verified live |
+| WAN ports 8–9 (RJ45) | ✅ working (DHCP tested) |
+| SFP 10–11 | ⚠️ DTS-defined, untested (no transceivers available); labels swapped to match stock EdgeOS naming |
 | LuCI (web UI) | ✅ working |
 | Serial console (115200) | ✅ working |
 | USB 3.0 | ✅ working |
-| LEDs | ✅ working — port LEDs light up on cable connect (hardware-driven via PHY status lines; the kernel LED class registers only `blue:power`/`white:power`) |
-| Reset button | ⚠️ untested |
+| LEDs | ✅ port LEDs work via PHY hardware |
+| Reset button | ✅ working (≥ 5 s hold = factory reset) |
+| DHCP (odhcpd) | ✅ working on eth0 via kernel vlan demux |
 
-## Known limitations
+## Known differences from stock EdgeOS
 
-- WAN is not preconfigured on purpose (different upstreams per deployment).
-- Ports 8/9 are on the WAN-side L2 domain; bridging them into `br-lan` causes
-  ~20% random frame loss (the fabric does not mix the two domains).
-- The QCA8511 switch chip is configured only by **vendor U-Boot** (`QCA8511
-  Init done`). As long as we keep the vendor U-Boot on eMMC this is invisible;
-  a custom/rebuilt U-Boot would have to initialize it or the if2-group panels
-  (1/2/4/5) lose their path to the kernel.
-- IPv6 is disabled on the fabric interfaces by the fabric script (kept on
-  `switch0`/`br-lan`).
-- RJ45 port LEDs work in hardware (PHY status lines), no kernel driver involved;
-  SFP module presence/activity and the reset button are not wired into the
-  kernel yet.
+| Item | Stock EdgeOS | Our OpenWrt | Notes |
+|------|-------------|-------------|-------|
+| LAN interface | eth0@itf (192.168.1.1) | eth0@itf (192.168.1.1) | ✅ byte-for-byte match |
+| eth0 MTU | 1500 | 1500 | ✅ |
+| itf (bond) MTU | 9000 | 9000 | ✅ |
+| eth1–7 state | UP + NO-CARRIER (empty) | DOWN (empty) | We reflect honest admin state; data path unaffected |
+| eth8/9 qdisc | noqueue | fq_codel | netifd default, cosmetic |
+| imq0 | present (mtu 16000) | absent | IMQ removed from kernel 6.18; QoS only |
+| npi0–3 | admin-DOWN, random MAC | admin-DOWN, deterministic MAC | from DTS nvmem, more stable |
+| ULA (IPv6) | none on eth0 | none on eth0 | ✅ no ULA, fe80 only |
+| br-lan | none on eth0 | none | ✅ removed |
 
 ## Acknowledgments
 

@@ -129,21 +129,19 @@ If OpenWrt is already running, just sysupgrade:
    Default credentials: **root / (empty password)** — LuCI will ask you to set
    a password.
 3. **Configure your WAN** — it is deliberately not preconfigured. Typical
-   static example for interface `lan8` (panel 8):
+   DHCP example for interface `wan` (panel 9):
 
-   ```
+   ```sh
    uci set network.wan='interface'
-   uci set network.wan.device='lan8'
-   uci set network.wan.proto='static'
-   uci add_list network.wan.ipaddr='192.168.35.122/24'
-   uci set network.wan.gateway='192.168.35.1'
+   uci set network.wan.device='eth9'
+   uci set network.wan.proto='dhcp'
    uci commit network
    ifup wan
    ```
 
-   …or use DHCP in LuCI. A second WAN (second ISP) can use `lan9` (panel 9).
+   …or use LuCI. A second WAN (second ISP) can use `eth8` (panel 8).
    Both fit the existing `wan` firewall zone.
-4. Verify the fabric (all 8 LAN ports, bond `itf`, `switch0` in `br-lan`):
+4. Verify the fabric:
 
    ```sh
    ip -br link show
@@ -154,7 +152,7 @@ If OpenWrt is already running, just sysupgrade:
 ### Port quick reference
 
 ```
-panels 0-7     → LAN  (br-lan, 192.168.1.1/24, untagged)
+panels 0-7     → LAN  (eth0 = 192.168.1.1/24, eth1–7 = per-panel, untagged)
 panels 8-9     → WAN  (configure as WAN interfaces)
 panels 10-11   → SFP+ (configure as needed)
 ```
@@ -166,9 +164,9 @@ panels 10-11   → SFP+ (configure as needed)
 | Nothing on serial | Check 115200 8N1, cable, `dialout` group; try another port |
 | U-Boot prompt not reachable | Missed the autoboot window — power-cycle again and press keys faster; on a running OpenWrt system use Method 2 instead |
 | `fatload` seems stuck | Normal: ~2–3 min for the initramfs. Do not interrupt |
-| Router boots but no LAN | Check `/etc/init.d/er12-fabric status` and `dmesg \| grep -iE "bond\|vlan\|lan"`; run `/etc/init.d/er12-fabric start` |
+| Router boots but no LAN | Check `/etc/init.d/er12-fabric status` and `dmesg | grep -iE "bond|vlan|eth"`; run `/etc/init.d/er12-fabric start` |
 | No internet, LAN works | WAN interface not configured / wrong upstream; check `ifstatus wan`, `ip route`, cable on panel 8/9 |
-| LuCI unreachable | `netstat -tlnp \| grep :80`; `/etc/init.d/uhttpd restart`; check the firewall zone |
+| LuCI unreachable | `netstat -tlnp | grep :80`; `/etc/init.d/uhttpd restart`; check the firewall zone |
 | Need a clean state | `firstboot -y && reboot` |
 
 ## References
