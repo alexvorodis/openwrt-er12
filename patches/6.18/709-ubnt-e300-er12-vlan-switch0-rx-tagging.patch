@@ -1,5 +1,5 @@
---- a/drivers/staging/octeon/ethernet-rx.c
-+++ b/drivers/staging/octeon/ethernet-rx.c
+--- a/drivers/staging/octeon/ethernet-rx.c	2026-08-31 08:39:52.303066739 +0300
++++ b/drivers/staging/octeon/ethernet-rx.c	2026-08-31 09:00:40.953891209 +0300
 @@ -17,6 +17,7 @@
  #include <linux/ratelimit.h>
  #include <linux/smp.h>
@@ -8,10 +8,10 @@
  #include <net/dst.h>
  #ifdef CONFIG_XFRM
  #include <linux/xfrm.h>
-@@ -37,6 +38,21 @@ static struct oct_rx_group {
+@@ -37,6 +38,21 @@
  	struct napi_struct napi;
  } oct_rx_group[16];
-
+ 
 +/*
 + * Match stock ER-12 behavior: tag rewrite on interface 1 only when
 + * VLAN-aware fabric mode is enabled.
@@ -30,14 +30,14 @@
  /**
   * cvm_oct_do_interrupt - interrupt handler.
   * @irq: Interrupt number.
-@@ -333,23 +349,56 @@ static int cvm_oct_poll(struct oct_rx_gr
+@@ -333,30 +349,57 @@
  			 * currently up.
  			 */
  			if (likely(dev->flags & IFF_UP)) {
 -				skb->protocol = eth_type_trans(skb, dev);
 -				skb->dev = dev;
 +				bool drop_packet = false;
-
+ 
 -				if (unlikely(work->word2.s.not_IP ||
 -					     work->word2.s.IP_exc ||
 -					     work->word2.s.L4_error ||
@@ -100,14 +100,13 @@
 +						dev_kfree_skb_irq(skb);
  				}
 -				netif_receive_skb(skb);
- 			} else {
- 				/*
- 				 * Drop any packet received for a device that
-@@ -358,6 +407,7 @@ static int cvm_oct_poll(struct oct_rx_gr
- 				dev->stats.rx_dropped++;
- 				dev_kfree_skb_irq(skb);
+-			} else {
+-				/*
+-				 * Drop any packet received for a device that
+-				 * isn't up.
+-				 */
+-				dev->stats.rx_dropped++;
+-				dev_kfree_skb_irq(skb);
  			}
-+
  		} else {
  			/*
- 			 * Drop any packet received for a device that
